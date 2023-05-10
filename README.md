@@ -2,8 +2,11 @@
 
 #### About Codeium
 
-A Free AI-Powered Toolkit for Developers.
-https://codeium.com/
+A Free AI-Powered Toolkit for Developers. https://codeium.com/  
+
+#### About addon
+
+AI Autocomplete using Codeium (free Copilot alternative)
 
 #### Installation
 
