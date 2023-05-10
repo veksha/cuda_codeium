@@ -4,6 +4,7 @@ desc=Codeium AI completions in your editor
 type=cudatext-plugin
 subdir=cuda_codeium
 homepage=https://github.com/veksha/cuda_codeium
+os=win,linux,macos
 
 [item1]
 section=events
