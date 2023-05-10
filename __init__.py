@@ -262,10 +262,13 @@ class Command:
                 cursor_offset = int(suffix.get('deltaCursorOffset', 0)) if suffix else 0
                 suffix = suffix['text'] if suffix else ''
                 
+                def rep_chars(text):
+                    return text.replace('\n',' ').replace('\t',' ')
+                
                 if text_inline:
-                    hint = text_inline.replace('\n',' ') + ' ' + text_block.replace('\n',' ')
+                    hint = rep_chars(text_inline) + ' ' + rep_chars(text_block)
                 else:
-                    hint = text.replace('\n',' ')
+                    hint = rep_chars(text)
                 
                 completions.append(Item(
                     hint,
