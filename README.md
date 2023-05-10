@@ -1,5 +1,10 @@
 # cuda_codeium
 
+#### About Codeium
+
+A Free AI-Powered Toolkit for Developers.
+https://codeium.com/
+
 #### Installation
 
 1. Run command `Codeium: Get new token..`. Web page will be opened.
