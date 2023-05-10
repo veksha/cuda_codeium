@@ -45,6 +45,7 @@ else:
 
 fn_config = os.path.join(app_path(APP_DIR_SETTINGS), PLUGIN_NAME+'.ini')
 option_token = ''
+option_api_key = ''
 
 
 Item = namedtuple('Item', 'hint text suffix text_inline text_inline_mask text_block start_position end_position cursor_offset')
@@ -64,8 +65,11 @@ class Command:
         self.process = None
         
         global option_token
+        global option_api_key
         option_token = ini_read(fn_config, 'op', 'token', option_token)
+        option_api_key = ini_read(fn_config, 'op', 'api_key', option_api_key)
         self.token = option_token
+        self.api_key = option_api_key
         
     def get_token(self):
         url = 'https://www.codeium.com/profile?response_type=token&redirect_uri=vim-show-auth-token&state=a&scope=openid+profile+email&redirect_parameters_type=query'
@@ -73,6 +77,7 @@ class Command:
         self.token = dlg_input('Your token: ', '')
         
         # save token to .ini
+        global option_token
         option_token = self.token
         ini_write(fn_config, 'op', 'token', option_token)
         
@@ -144,17 +149,23 @@ class Command:
         if self.token is None:
             self.get_token()
         
-        with ThreadPoolExecutor() as ex:
-            future = ex.submit(self.register_user, self.token)
-            while not future.done():
-                app_idle()
-                time.sleep(0.001)
-            self.api_key = future.result()
+        if not self.api_key:
+            with ThreadPoolExecutor() as ex:
+                future = ex.submit(self.register_user, self.token)
+                while not future.done():
+                    app_idle()
+                    time.sleep(0.001)
+                self.api_key = future.result()
+            
+            if not self.api_key:
+                print("ERROR: {}: Can't register user. Maybe token has expired. Try getting new token.".format(self.name))
+                return
         
-        if self.api_key is None:
-            print("ERROR: {}: Can't register user. Maybe token has expired. Try getting new token.".format(self.name))
-            return
-        
+        # save api_key to .ini
+        global option_api_key
+        option_api_key = self.api_key
+        ini_write(fn_config, 'op', 'api_key', option_api_key)
+
         self.manager_dir = tempfile.mkdtemp(prefix=self.name+'_')
         self.executable = self.get_executable()
         
