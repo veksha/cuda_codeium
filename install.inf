@@ -1,0 +1,31 @@
+[info]
+title=Codeium
+desc=(Fill the description)
+type=cudatext-plugin
+subdir=cuda_codeium
+homepage=(Fill the GitHub repo URL)
+
+[item1]
+section=events
+events=on_snippet,on_exit
+
+[item2]
+section=commands
+caption=Codeium\Get new token..
+method=get_token
+
+[item3]
+section=commands
+caption=Codeium\Log in
+method=log_in
+
+[item4]
+section=commands
+caption=Codeium\Get completions
+method=get_completions
+
+[item5]
+section=commands
+caption=Codeium\Shutdown
+method=shutdown
+
