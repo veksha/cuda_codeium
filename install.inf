@@ -30,3 +30,8 @@ section=commands
 caption=Codeium\Shutdown
 method=shutdown
 
+[item6]
+section=commands
+caption=Codeium\Chat
+method=request_GetChatMessage
+

@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+message Metadata {
+  string ide_name = 1;
+  string ide_version = 7;
+  string extension_name = 12;
+  string extension_version = 2;
+  string api_key = 3;
+  string locale = 4;
+  string os = 5;
+  string hardware = 8;
+  bool disable_telemetry = 6;
+  string session_id = 10;
+  int32 request_id = 9;
+  string source_address = 11;
+  string user_agent = 13;
+  string url = 14;
+}
+
+message ChatMessage {
+  string messageId = 1;
+  ChatMessageSource source = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string conversationId = 4;
+  oneof content
+  {
+    ChatMessageIntent intent = 5;
+    ChatMessageAction action = 6;
+  }
+}
+
+message ChatMessageIntent
+{
+  oneof intent {
+    GenericIntent generic = 1;
+    ExplainFunctionIntent explainFunction = 2;
+    FunctionDocstringIntent functionDocstring = 3;
+    FunctionRefactorIntent functionRefactor = 4;
+    ExplainCodeBlockIntent explainCodeBlock = 5;
+    CodeBlockRefactorIntent codeBlockRefactor = 6;
+  }
+}
+
+message GenericIntent {
+  string text = 1;
+}
+
+message ExplainFunctionIntent {
+  // Define fields for ExplainFunctionIntent
+}
+
+message FunctionDocstringIntent {
+  // Define fields for FunctionDocstringIntent
+}
+
+message FunctionRefactorIntent {
+  // Define fields for FunctionRefactorIntent
+}
+
+message ExplainCodeBlockIntent {
+  // Define fields for ExplainCodeBlockIntent
+}
+
+message CodeBlockRefactorIntent {
+  // Define fields for CodeBlockRefactorIntent
+}
+
+message ChatMessageAction {
+  oneof action {
+    bytes text = 1;
+    int64 num_tokens = 2;
+  }
+}
+
+message Generic {
+  string text = 1;
+};
+
+enum ChatMessageSource {
+  UNSPECIFIED = 0;
+  USER = 1;
+  SYSTEM = 2;
+  UNKNOWN = 3;
+}
+
+message GetChatMessageRequest {
+  Metadata metadata = 1;
+  string prompt = 2;
+  repeated ChatMessage chat_messages = 3;
+  ExperimentConfig experiment_config = 4;
+}
+
+enum ExperimentKey {
+  EXPERIMENT_KEY_UNKNOWN = 0;
+  EXPERIMENT_KEY_1 = 1;
+  EXPERIMENT_KEY_2 = 2;
+  // Add more enum values as needed
+}
+
+message ExperimentConfig {
+  repeated ExperimentKey force_enable_experiments = 1;
+  repeated ExperimentKey force_disable_experiments = 2;
+}
+
+service LanguageServerService {
+  rpc GetChatMessage(GetChatMessageRequest) returns (GetChatMessageResponse) {}
+}
+
+message GetChatMessageResponse {
+  ChatMessage chat_message = 1;
+}

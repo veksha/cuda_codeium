@@ -29,7 +29,14 @@ IS_WIN = os.name=='nt'
 _MAXLINE = 65536
 
 API_URL = 'https://server.codeium.com'
-HEADERS = {'Content-Type': 'application/json'}
+HEADERS_JSON            = { 'Content-Type': 'application/json' }
+HEADERS_CONNECT_PROTO   = {
+    'Content-Type': 'application/connect+proto',
+    'connect-protocol-version': '1',
+    #'connect-accept-encoding': 'gzip,br',
+    #'Connection': 'close',
+    #'Transfer-Encoding': 'chunked',
+}
 SNIP_ID = PLUGIN_NAME+'__snip'
 
 if sys.platform == 'linux' and 'arm' in sys.version.lower():
@@ -89,7 +96,7 @@ class Command:
         data = '{{"firebase_id_token": "{}"}}'.format(token)
         
         try:
-            response = requests.post(url, headers=HEADERS, data=data, timeout=4)
+            response = requests.post(url, headers=HEADERS_JSON, data=data, timeout=4)
             #response.raise_for_status()
         except requests.exceptions.Timeout:
             pass;      LOG and print("ERROR: Can't get API key: The request timed out.")
@@ -115,8 +122,7 @@ class Command:
             BIN_SUFFIX
         )
         
-        msg_status('{}: Downloading server...'.format(self.name))
-        app_idle()
+        msg_status('{}: Downloading server...'.format(self.name), process_messages=True)
         response = requests.get(url)
         
         if response.status_code == 200:
@@ -207,6 +213,7 @@ class Command:
         if num_files:
             self.port = int(num_files[0])
             pass;    LOG and print("Found port:", self.port)
+            #print("Found port:", self.port)
             timer_proc(TIMER_START, self.heartbeat, 5000)
             msg_status("{}: Logged in".format(self.name))
             
@@ -334,7 +341,7 @@ class Command:
             }
             
             try:
-                response = requests.post(url, headers=HEADERS, data=json.dumps(data), timeout=4)
+                response = requests.post(url, headers=HEADERS_JSON, data=json.dumps(data), timeout=4)
                 response.raise_for_status()
             except requests.exceptions.Timeout:
                 print("ERROR: Heartbeat failed: The request timed out.")
@@ -353,6 +360,145 @@ class Command:
             while not future.done():
                 app_idle()
                 time.sleep(0.001)
+    
+    def request_GetChatMessage(self, *args):
+        if self.port is None:
+            print("ERROR: Can't get chat message: server is not started.")
+            return
+        
+        url = 'http://127.0.0.1:{}/exa.language_server_pb.LanguageServerService/GetChatMessage'.format(
+            self.port
+        )
+        
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+        from . import proto_pb2
+        
+        data = proto_pb2.GetChatMessageRequest()
+        question = dlg_input('Enter your question:', '')
+        if question is None:
+            return
+        data.prompt = question
+        
+        metadata = proto_pb2.Metadata()
+        metadata.api_key = self.api_key
+        metadata.ide_name = "vscode"
+        metadata.locale = "en"
+        metadata.ide_version = "Visual Studio Code 1.77.3"
+        metadata.extension_version = self.language_server_version
+        metadata.extension_name = "vscode"
+        #metadata.session_id = "50d517c6-ac4a-4d44-ab20-1d48e12ee70d"
+        
+        from .google.protobuf.timestamp_pb2 import Timestamp
+        import datetime
+        now = datetime.datetime.now()
+        timestamp = Timestamp()
+        timestamp.FromDatetime(now)
+        
+        chat_message = proto_pb2.ChatMessage()
+        chat_message.messageId = 'user-1'
+        chat_message.source = 1
+        chat_message.timestamp.CopyFrom(timestamp)
+        #chat_message.conversationId = '8HTVPeFtS35MLqygNelEYA8Ky8Qd32jG'
+        
+        
+        data.metadata.CopyFrom(metadata)
+        data.chat_messages.append(chat_message)
+        
+        data = data.SerializeToString()
+        compression_flag = b'\x00'
+        data = compression_flag + len(data).to_bytes(4, 'big') + data
+        
+        msg_status('{}: waiting for bot..'.format(self.name), process_messages=True)
+        
+        try:
+            response = requests.post(url, headers=HEADERS_CONNECT_PROTO, data=data, timeout=8, stream=True)
+            response.raise_for_status()
+            messages = []
+            tab_opened = False
+            partial_chunk = b''
+            ed_handle = None
+            
+            for data in response.iter_content(chunk_size=8192):
+                while data:
+                    #print("data len", len(data))
+                    #print("partial_chunk len", len(partial_chunk))
+                    #if len(partial_chunk) > 0:
+                        #raise
+                    data = partial_chunk + data # prepend previous chunk if any
+                    current_chunk = data # remember bytes, just in case
+                    data = data[1:] # cut compressed flag from data
+                    msg_length = int.from_bytes(data[0:4], 'big')
+                    
+                    if msg_length < 10: # small msg can't be parsed (this is final empty message)
+                        break
+                    
+                    data = data[4:] # cut msg_length integer
+                    
+                    if msg_length > len(data)+2:
+                        print("ERROR: msg_length is bigger then data len: ", msg_length, '>', len(data))
+                        raise 
+                    
+                    msg = None
+                    try:
+                        msg = proto_pb2.GetChatMessageResponse().FromString(data[:msg_length])
+                    except Exception as e:
+                        #print("ERROR:", e, ':', data)
+                        print("ERROR: can't decode chunk, let's save it to use with next chunk")
+                        print("ERROR: current_chunk", current_chunk)
+                        raise
+                        partial_chunk = current_chunk
+                        continue
+                        
+                    data = data[msg_length:] # cut parsed chunk
+                    
+                    if msg is None:
+                        continue
+                    partial_chunk = b''
+
+                    messages.append(msg)
+
+                    if not tab_opened:
+                        tab_opened = True
+                        ed.cmd(cmds.cmd_FileNew)
+                        ed.set_prop(PROP_TAB_TITLE, 'Bot')
+                        #ed.set_prop(PROP_LEXER_FILE, 'Markdown')
+                        ed.set_prop(PROP_LEXER_FILE, 'Log files ^')
+                        ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
+                        caret_view = ed.get_prop(PROP_CARET_VIEW)
+                        ed.set_prop(PROP_CARET_VIEW, '-100,-100')
+                        # remember editor
+                        ed_handle = ed.get_prop(PROP_HANDLE_SELF)
+                    
+                    editor = Editor(ed_handle)
+                    from .google.protobuf.internal import encoder, decoder
+                    
+                    buf = messages[-1].chat_message.action.text
+                    if buf:
+                        # first byte is '\n' for some reason. some kind of mark?
+                        buf = buf[1:] # skip it
+                        # next we have varint? seems it's text size? what for? decode it and skip
+                        varint, varint_len = decoder._DecodeVarint(buf, 0)
+                        buf = buf[varint_len:]
+                    
+                    editor.set_text_all(buf.decode('utf-8', errors='replace'))
+                    
+                    
+                    editor.cmd(cmds.cCommand_GotoTextEnd)
+                    app_idle()
+                        
+            if not messages:
+                print("{}: NOTE: no answer :(".format(self.name))
+            else:
+                msg_status('{}: answer recieved'.format(self.name), process_messages=True)
+                editor.set_prop(PROP_CARET_VIEW, caret_view)
+            return
+            
+        except requests.exceptions.Timeout:
+            print("ERROR: GetChatMessage failed: The request timed out.")
+            return
+        except requests.exceptions.RequestException as e:
+            print("ERROR: GetChatMessage failed. Error:", e)
+            return
     
     def request_completions(self, *args):
         if self.port is None:
@@ -394,7 +540,7 @@ class Command:
             #'other_documents': {},
         }
         try:
-            response = requests.post(url, headers=HEADERS, data=json.dumps(data), timeout=4)
+            response = requests.post(url, headers=HEADERS_JSON, data=json.dumps(data), timeout=4)
             response.raise_for_status()
         except requests.exceptions.Timeout:
             print("ERROR: Can't get completions: The request timed out")
@@ -544,3 +690,4 @@ lex_ids = {
     'XSLT': 'xsl', # spec: 'XSL'
     'YAML': 'yaml',
 }
+
