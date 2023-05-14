@@ -503,6 +503,7 @@ class Command:
                     
                     editor = self.get_editor(msg.chat_message.conversationId, question)
                     editor.set_prop(PROP_CARET_VIEW, '-100,-100')
+                    editor.focus()
                     
                     from .google.protobuf.internal import encoder, decoder
                     
