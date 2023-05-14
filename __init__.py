@@ -17,10 +17,12 @@ import time
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from collections import namedtuple
+import uuid
 
 from cudatext import *
 import cudax_lib as apx
 import cudatext_cmd as cmds
+import cudatext_keys as keys
 
 PLUGIN_NAME = 'cuda_codeium'
 LOG = False
@@ -57,6 +59,8 @@ option_api_key = ''
 
 Item = namedtuple('Item', 'hint text suffix text_inline text_inline_mask text_block start_position end_position cursor_offset')
 
+SESSION_ID = str(uuid.uuid4())
+
 class Command:
     
     def __init__(self):
@@ -70,6 +74,7 @@ class Command:
         self.row = 1
         self.col = 0
         self.process = None
+        self.caret_view = None
         
         global option_token
         global option_api_key
@@ -77,6 +82,10 @@ class Command:
         option_api_key = ini_read(fn_config, 'op', 'api_key', option_api_key)
         self.token = option_token
         self.api_key = option_api_key
+        
+        self.conversations = {}
+        self.in_process_of_creating_new_tab = False
+        self.messages = []
         
     def get_token(self):
         url = 'https://www.codeium.com/profile?response_type=token&redirect_uri=vim-show-auth-token&state=a&scope=openid+profile+email&redirect_parameters_type=query'
@@ -361,11 +370,21 @@ class Command:
                 app_idle()
                 time.sleep(0.001)
     
-    def request_GetChatMessage(self, *args):
+    def Ask(self):
         if self.port is None:
-            print("ERROR: Can't get chat message: server is not started.")
-            return
-        
+            self.log_in()
+            
+        if self.in_process_of_creating_new_tab:
+            timer_proc(TIMER_START_ONE, lambda _: self.Ask(), 10)
+        else:
+            #question = dlg_input('Enter your question:', '')
+            question = Dialog.input()
+            
+            if question is None:
+                return
+            self.request_GetChatMessage(question)
+    
+    def request_GetChatMessage(self, question):
         url = 'http://127.0.0.1:{}/exa.language_server_pb.LanguageServerService/GetChatMessage'.format(
             self.port
         )
@@ -373,11 +392,8 @@ class Command:
         sys.path.append(os.path.dirname(os.path.abspath(__file__)))
         from . import proto_pb2
         
-        data = proto_pb2.GetChatMessageRequest()
-        question = dlg_input('Enter your question:', '')
-        if question is None:
-            return
-        data.prompt = question
+        GetChatMessage_data = proto_pb2.GetChatMessageRequest()
+        GetChatMessage_data.prompt = question or ''
         
         metadata = proto_pb2.Metadata()
         metadata.api_key = self.api_key
@@ -386,7 +402,9 @@ class Command:
         metadata.ide_version = "Visual Studio Code 1.77.3"
         metadata.extension_version = self.language_server_version
         metadata.extension_name = "vscode"
+        metadata.session_id = SESSION_ID
         #metadata.session_id = "50d517c6-ac4a-4d44-ab20-1d48e12ee70d"
+        GetChatMessage_data.metadata.CopyFrom(metadata)
         
         from .google.protobuf.timestamp_pb2 import Timestamp
         import datetime
@@ -396,15 +414,42 @@ class Command:
         
         chat_message = proto_pb2.ChatMessage()
         chat_message.messageId = 'user-1'
+        chat_message.intent.generic.text = GetChatMessage_data.prompt
         chat_message.source = 1
         chat_message.timestamp.CopyFrom(timestamp)
-        #chat_message.conversationId = '8HTVPeFtS35MLqygNelEYA8Ky8Qd32jG'
+        
+        unique_string = str(uuid.uuid4())
+        #chat_message.conversationId = unique_string
+        chat_message.conversationId = '8HTVPeFtS35MLqygNelEYA8Ky8Qd32jG'
+        self.messages.append(chat_message)
+        GetChatMessage_data.chat_messages.extend(self.messages)
         
         
-        data.metadata.CopyFrom(metadata)
-        data.chat_messages.append(chat_message)
         
-        data = data.SerializeToString()
+        #recordChat_data = proto_pb2.RecordChatPanelSessionRequest()
+        #recordChat_data.metadata.CopyFrom(metadata)
+        ##recordChat_data.startTimestamp.CopyFrom(timestamp)
+        #recordChat_data.endTimestamp.CopyFrom(timestamp)
+        #
+        #data = recordChat_data.SerializeToString()
+        #compression_flag = b'\x00'
+        #data = compression_flag + len(data).to_bytes(4, 'big') + data
+        #
+        #try:
+        #    response = requests.post(url, headers=HEADERS_CONNECT_PROTO, data=data, timeout=8)
+        #    response.raise_for_status()
+        #    print("response.content:", response.content)
+        #    
+        #except requests.exceptions.Timeout:
+        #    print("ERROR: RecordChatPanelSession failed: The request timed out.")
+        #    return
+        #except requests.exceptions.RequestException as e:
+        #    print("ERROR: RecordChatPanelSession failed. Error:", e)
+        #    return
+        
+        
+        
+        data = GetChatMessage_data.SerializeToString()
         compression_flag = b'\x00'
         data = compression_flag + len(data).to_bytes(4, 'big') + data
         
@@ -414,7 +459,6 @@ class Command:
             response = requests.post(url, headers=HEADERS_CONNECT_PROTO, data=data, timeout=8, stream=True)
             response.raise_for_status()
             messages = []
-            tab_opened = False
             partial_chunk = b''
             ed_handle = None
             
@@ -454,22 +498,11 @@ class Command:
                     if msg is None:
                         continue
                     partial_chunk = b''
-
-                    messages.append(msg)
-
-                    if not tab_opened:
-                        tab_opened = True
-                        ed.cmd(cmds.cmd_FileNew)
-                        ed.set_prop(PROP_TAB_TITLE, 'Bot')
-                        #ed.set_prop(PROP_LEXER_FILE, 'Markdown')
-                        ed.set_prop(PROP_LEXER_FILE, 'Log files ^')
-                        ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
-                        caret_view = ed.get_prop(PROP_CARET_VIEW)
-                        ed.set_prop(PROP_CARET_VIEW, '-100,-100')
-                        # remember editor
-                        ed_handle = ed.get_prop(PROP_HANDLE_SELF)
                     
-                    editor = Editor(ed_handle)
+                    messages.append(msg)
+                    
+                    editor = self.get_editor(msg.chat_message.conversationId, question)
+                    
                     from .google.protobuf.internal import encoder, decoder
                     
                     buf = messages[-1].chat_message.action.text
@@ -490,7 +523,9 @@ class Command:
                 print("{}: NOTE: no answer :(".format(self.name))
             else:
                 msg_status('{}: answer recieved'.format(self.name), process_messages=True)
-                editor.set_prop(PROP_CARET_VIEW, caret_view)
+                editor.set_prop(PROP_CARET_VIEW, self.caret_view)
+                
+                self.messages.append(messages[-1].chat_message)
             return
             
         except requests.exceptions.Timeout:
@@ -499,6 +534,24 @@ class Command:
         except requests.exceptions.RequestException as e:
             print("ERROR: GetChatMessage failed. Error:", e)
             return
+            
+    def get_editor(self, conversation_id, question):
+        ed_handle = self.conversations.get(conversation_id, None)
+        if not ed_handle:
+            self.in_process_of_creating_new_tab = True
+            ed.cmd(cmds.cmd_FileNew)
+            ed_handle = ed.get_prop(PROP_HANDLE_SELF)
+            self.conversations[conversation_id] = ed_handle
+            self.in_process_of_creating_new_tab = False
+
+            tab_title = question.replace('\n', ' ')[:50]
+            ed.set_prop(PROP_TAB_TITLE, 'Bot | {}'.format(tab_title))
+            #ed.set_prop(PROP_LEXER_FILE, 'Markdown')
+            ed.set_prop(PROP_LEXER_FILE, 'Log files ^')
+            ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
+            self.caret_view = ed.get_prop(PROP_CARET_VIEW)
+            ed.set_prop(PROP_CARET_VIEW, '-100,-100')
+        return Editor(ed_handle)
     
     def request_completions(self, *args):
         if self.port is None:
@@ -573,7 +626,17 @@ class Command:
             self.process = None
 
 
-    def on_exit(self, *args, **vargs):
+    def on_close(self, ed_self: Editor):
+        '''
+        Remove conversation from dict when the tab is closed.
+        '''
+        ed_h = ed_self.get_prop(PROP_HANDLE_SELF)
+        to_pop = [k for k, v in self.conversations.items() if v == ed_h]
+        
+        for conversation_id in to_pop:
+            self.conversations.pop(conversation_id, None)
+
+    def on_exit(self, ed_self):
         self.shutdown()
 
 
@@ -691,3 +754,81 @@ lex_ids = {
     'YAML': 'yaml',
 }
 
+class Dialog:
+    text = ''
+    cancelled = True
+    
+    @classmethod
+    def on_key_down(cls, id_dlg, id_ctl, data='', info=''):
+        key, mod = data
+        if mod == 'c' and key == keys.VK_ENTER:
+            cls.cancelled = False
+            cls.on_send(id_dlg, id_ctl)
+            
+    
+    @classmethod
+    def on_send(cls, id_dlg, id_ctl, data='', info=''):
+        memo = Editor(dlg_proc(id_dlg, DLG_CTL_HANDLE, name='memo'))
+        cls.text = memo.get_text_all()
+        dlg_proc(id_dlg, DLG_HIDE)
+        
+        
+    @classmethod
+    def input(cls):
+        h=dlg_proc(0, DLG_CREATE)
+        dlg_proc(h, DLG_PROP_SET, prop={
+            'cap': 'Codeium chat',
+            'w': 500,
+            'h': 400,
+        })
+        
+        _, font_size = ed.get_prop(PROP_FONT)
+        font_scale = ed.get_prop(PROP_SCALE_FONT)
+        
+        idc=dlg_proc(h, DLG_CTL_ADD, 'label');
+        dlg_proc(h, DLG_CTL_PROP_SET, index=idc, prop={
+            'cap': 'Enter your question below.\nCtrl+Enter to send.',
+            'align': ALIGN_TOP,
+            'sp_a': 2,
+        })
+        
+        idc=dlg_proc(h, DLG_CTL_ADD, 'editor');
+        dlg_proc(h, DLG_CTL_PROP_SET, index=idc, prop={
+            #'border': DBORDER_NONE,
+            'name': 'memo',
+            'align': ALIGN_CLIENT,
+            'font_size': font_size,
+            #'sp_a': 2,
+            'on_key_down': cls.on_key_down,
+        })
+        memo = Editor(dlg_proc(h, DLG_CTL_HANDLE, index=idc))
+        memo.set_prop(PROP_SCALE_FONT, font_scale)
+        if cls.cancelled:
+            memo.set_text_all(cls.text)
+        else:
+            cls.text = ''
+        cls.cancelled = True
+        
+        idc=dlg_proc(h, DLG_CTL_ADD, 'button');
+        dlg_proc(h, DLG_CTL_PROP_SET, index=idc, prop={
+           'name': 'btn_ok',
+           'cap': 'Send',
+           'align': ALIGN_BOTTOM,
+           'sp_a': 6,
+           'on_change': cls.on_send,
+           'ex0': True,
+        })
+        
+        dlg_proc(h, DLG_SCALE)
+        
+        timer_proc(TIMER_START_ONE, lambda _: memo.cmd(cmds.cCommand_GotoTextEnd), 10)
+        dlg_proc(h, DLG_SHOW_MODAL)
+        
+        if cls.cancelled:
+            cls.text = memo.get_text_all()
+        
+        dlg_proc(h, DLG_FREE)
+        
+        if not cls.cancelled:
+            return(cls.text or None)
+        

@@ -104,8 +104,19 @@ message ExperimentConfig {
   repeated ExperimentKey force_disable_experiments = 2;
 }
 
+message RecordChatPanelSessionRequest {
+  Metadata metadata = 1;
+  google.protobuf.Timestamp startTimestamp = 2;
+  google.protobuf.Timestamp endTimestamp = 3;
+}
+
+message RecordChatPanelSessionResponse {
+  // Define fields for RecordChatPanelSessionResponse
+}
+
 service LanguageServerService {
   rpc GetChatMessage(GetChatMessageRequest) returns (GetChatMessageResponse) {}
+  rpc RecordChatPanelSession(RecordChatPanelSessionRequest) returns (RecordChatPanelSessionResponse) {}
 }
 
 message GetChatMessageResponse {

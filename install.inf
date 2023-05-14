@@ -8,7 +8,7 @@ os=win-x86_64,linux-x86_64,linux-aarch64,macos
 
 [item1]
 section=events
-events=on_snippet,on_exit
+events=on_snippet~,on_close~,on_exit~
 
 [item2]
 section=commands
@@ -32,6 +32,6 @@ method=shutdown
 
 [item6]
 section=commands
-caption=Codeium\Chat
-method=request_GetChatMessage
+caption=Codeium\Ask...
+method=Ask
 
