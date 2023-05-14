@@ -615,6 +615,7 @@ class Command:
     def shutdown(self, *args, **vargs):
         pass;       LOG and print('{}: shutting down'.format(self.name))
         
+        self.port = None
         if self.process:
             if IS_WIN:
                 startupinfo = subprocess.STARTUPINFO()

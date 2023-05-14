@@ -27,11 +27,12 @@ method=get_completions
 
 [item5]
 section=commands
-caption=Codeium\Shutdown
-method=shutdown
+caption=Codeium\Chat...
+method=Ask
 
 [item6]
 section=commands
-caption=Codeium\Ask...
-method=Ask
+caption=Codeium\Shutdown
+method=shutdown
+
 
