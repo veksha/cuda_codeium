@@ -461,6 +461,7 @@ class Command:
             messages = []
             partial_chunk = b''
             ed_handle = None
+            error_count = 0
             
             for data in response.iter_content(chunk_size=8192):
                 while data:
@@ -491,6 +492,10 @@ class Command:
                         #print("ERROR: can't decode chunk, let's save it to use with next chunk")
                         #print("ERROR: current_chunk", current_chunk)
                         #raise
+                        error_count += 1
+                        if error_count > 10:
+                            print("ERROR: too many errors, aborting task.")
+                            return
                         partial_chunk = current_chunk
                         continue
                         
