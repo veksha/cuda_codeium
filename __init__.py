@@ -489,7 +489,7 @@ class Command:
                         #print("ERROR:", e, ':', data)
                         print("ERROR: can't decode chunk, let's save it to use with next chunk")
                         print("ERROR: current_chunk", current_chunk)
-                        raise
+                        #raise
                         partial_chunk = current_chunk
                         continue
                         
