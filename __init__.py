@@ -502,6 +502,7 @@ class Command:
                     messages.append(msg)
                     
                     editor = self.get_editor(msg.chat_message.conversationId, question)
+                    editor.set_prop(PROP_CARET_VIEW, '-100,-100')
                     
                     from .google.protobuf.internal import encoder, decoder
                     
@@ -550,7 +551,6 @@ class Command:
             ed.set_prop(PROP_LEXER_FILE, 'Log files ^')
             ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
             self.caret_view = ed.get_prop(PROP_CARET_VIEW)
-            ed.set_prop(PROP_CARET_VIEW, '-100,-100')
         return Editor(ed_handle)
     
     def request_completions(self, *args):
