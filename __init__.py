@@ -763,12 +763,12 @@ class Dialog:
     def on_key_down(cls, id_dlg, id_ctl, data='', info=''):
         key, mod = data
         if mod == 'c' and key == keys.VK_ENTER:
-            cls.cancelled = False
             cls.on_send(id_dlg, id_ctl)
             
     
     @classmethod
     def on_send(cls, id_dlg, id_ctl, data='', info=''):
+        cls.cancelled = False
         memo = Editor(dlg_proc(id_dlg, DLG_CTL_HANDLE, name='memo'))
         cls.text = memo.get_text_all()
         dlg_proc(id_dlg, DLG_HIDE)
