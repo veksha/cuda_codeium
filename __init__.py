@@ -487,8 +487,8 @@ class Command:
                         msg = proto_pb2.GetChatMessageResponse().FromString(data[:msg_length])
                     except Exception as e:
                         #print("ERROR:", e, ':', data)
-                        print("ERROR: can't decode chunk, let's save it to use with next chunk")
-                        print("ERROR: current_chunk", current_chunk)
+                        #print("ERROR: can't decode chunk, let's save it to use with next chunk")
+                        #print("ERROR: current_chunk", current_chunk)
                         #raise
                         partial_chunk = current_chunk
                         continue
