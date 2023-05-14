@@ -1,0 +1,5 @@
+2023.05.14
++ add: command "Chat..."
+
+2023.05.10
+initial version
