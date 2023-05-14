@@ -479,8 +479,9 @@ class Command:
                     data = data[4:] # cut msg_length integer
                     
                     if msg_length > len(data)+2:
-                        print("ERROR: msg_length is bigger then data len: ", msg_length, '>', len(data))
-                        raise 
+                        pass
+                        #print("ERROR: msg_length is bigger then data len: ", msg_length, '>', len(data))
+                        #raise 
                     
                     msg = None
                     try:
