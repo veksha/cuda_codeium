@@ -1,7 +1,9 @@
 2023.05.15
 + fix: error when bot answer is long
 + fix: AI autocompletion errors when invoked on virtual space (caret)
-+ fix: make completion work on files with no lexer 
++ fix: make completion work on files with no lexer
++ fix: ImportError (cannot import name 'builder' from 'google.protobuf.internal')
++ add: insert quoted question to the beginning of the chat-reply
 
 2023.05.14
 + add: command "Chat..."
