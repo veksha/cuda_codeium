@@ -12,7 +12,7 @@ events=on_snippet~,on_close~,on_exit~
 
 [item2]
 section=commands
-caption=Codeium\Get new token..
+caption=Codeium\Get new token...
 method=get_token
 
 [item3]
