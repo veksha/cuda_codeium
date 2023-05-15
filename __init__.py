@@ -202,9 +202,17 @@ class Command:
         
         def wait_for_port_file():
             self.port = None
+            n = 0
             while self.port is None:
                 self.find_port()
                 time.sleep(0.3)
+                if n > 5:
+                    print("ERROR: {}: {} {}{}".format(
+                        self.name, "port can't be found.","ensure executable is working: ", self.executable)
+                    )
+                    self.shutdown()
+                    break
+                n += 1
                 
         with ThreadPoolExecutor() as ex:
             future = ex.submit(wait_for_port_file)
@@ -226,6 +234,8 @@ class Command:
     def get_completions(self):
         if self.port is None:
             self.log_in()
+            if self.port is None:
+                return
             
         with ThreadPoolExecutor() as ex:
             future = ex.submit(self.request_completions)
@@ -370,6 +380,8 @@ class Command:
     def Ask(self):
         if self.port is None:
             self.log_in()
+            if self.port is None:
+                return
             
         if self.in_process_of_creating_new_tab:
             timer_proc(TIMER_START_ONE, lambda _: self.Ask(), 10)
@@ -589,7 +601,7 @@ class Command:
         return items
         
     def shutdown(self, *args, **vargs):
-        pass;       LOG and print('{}: shutting down'.format(self.name))
+        msg_status('{}: Shutting down'.format(self.name))
         
         self.port = None
         if self.process:
