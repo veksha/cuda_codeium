@@ -476,7 +476,12 @@ class Command:
                             # next we have varint? seems it's text size? what for? decode it and skip
                             varint, varint_len = decoder._DecodeVarint(buf, 0)
                             buf = buf[varint_len:]
-                        editor.set_text_all(buf.decode('utf-8', errors='replace'))
+                        editor.set_text_all(
+                            'User: {}\n\nBot: {}'.format(
+                                question,
+                                buf.decode('utf-8', errors='replace')
+                            )
+                        )
                         editor.cmd(cmds.cCommand_GotoTextEnd)
                         app_idle()
             
