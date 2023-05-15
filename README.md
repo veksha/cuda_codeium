@@ -16,7 +16,7 @@ AI Autocomplete and AI Chat using Codeium (free Copilot alternative)
 
 Now you should be logged in. Server executable will be downloaded and started automatically.
 
-Do not forget to set hotkey for `Codeium: Get completions` command. For example `Alt+\`.
+Do not forget to set hotkey for `Codeium: Get completions` command. For example `Alt+\`.  
 For chatting with AI, use command `Codeium: Chat...`
 
 Enjoy!
