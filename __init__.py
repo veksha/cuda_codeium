@@ -31,6 +31,8 @@ HEADERS_JSON       = { 'Content-Type': 'application/json' }
 HEADERS_GRPC_PROTO = { 'Content-Type': 'application/grpc+proto' }
 SNIP_ID = PLUGIN_NAME+'__snip'
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 if sys.platform == 'linux' and 'arm' in sys.version.lower():
     BIN_SUFFIX = 'linux_arm'
 elif sys.platform == 'linux':
@@ -389,7 +391,6 @@ class Command:
             self.port
         )
         
-        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
         from . import proto_pb2
         
         GetChatMessage_data = proto_pb2.GetChatMessageRequest()
