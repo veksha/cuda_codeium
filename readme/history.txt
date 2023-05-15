@@ -1,5 +1,7 @@
-2023.05.14
-+ fix: error when bot answer is long 
+2023.05.15
++ fix: error when bot answer is long
++ fix: AI autocompletion errors when invoked on virtual space (caret)
++ fix: make completion work on files with no lexer 
 
 2023.05.14
 + add: command "Chat..."
