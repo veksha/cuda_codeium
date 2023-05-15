@@ -533,9 +533,12 @@ class Command:
         
         self.text = ed.get_text_all()
         self.col, self.row = ed.get_carets()[0][:2]
+        if self.col > ed.get_line_len(self.row)-1:
+           self.col = ed.get_line_len(self.row)-1
         
         lexer = ed.get_prop(PROP_LEXER_FILE)
-        lang =  language_enum.get(lex_ids.get(lexer,''), 0)
+        lang =  language_enum.get(lex_ids.get(lexer,'plaintext'), 30)
+        lexer = lexer or 'plaintext'
         
         data = {
             'metadata': {
