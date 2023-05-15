@@ -533,8 +533,9 @@ class Command:
         
         self.text = ed.get_text_all()
         self.col, self.row = ed.get_carets()[0][:2]
-        if self.col > ed.get_line_len(self.row)-1:
-           self.col = ed.get_line_len(self.row)-1
+        line_len = ed.get_line_len(self.row)
+        if line_len > 0 and self.col > line_len:
+           self.col = line_len
         
         lexer = ed.get_prop(PROP_LEXER_FILE)
         lang =  language_enum.get(lex_ids.get(lexer,'plaintext'), 30)
