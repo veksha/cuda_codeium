@@ -534,8 +534,8 @@ class Command:
 
             tab_title = question.replace('\n', ' ')[:50]
             ed.set_prop(PROP_TAB_TITLE, 'Bot | {}'.format(tab_title))
-            #ed.set_prop(PROP_LEXER_FILE, 'Markdown')
-            ed.set_prop(PROP_LEXER_FILE, 'Log files ^')
+            ed.set_prop(PROP_LEXER_FILE, 'Markdown')
+            #ed.set_prop(PROP_LEXER_FILE, 'Log files ^')
             ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
             self.caret_view = ed.get_prop(PROP_CARET_VIEW)
         return Editor(ed_handle)
