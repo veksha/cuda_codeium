@@ -206,7 +206,7 @@ class Command:
             while self.port is None:
                 self.find_port()
                 time.sleep(0.3)
-                if n > 5:
+                if n > 25: # 0.3*25 - waiting ~7.5 seconds for port file
                     print("ERROR: {}: {} {}{}".format(
                         self.name, "port can't be found.","ensure executable is working: ", self.executable)
                     )
