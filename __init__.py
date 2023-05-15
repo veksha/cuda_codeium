@@ -1,7 +1,3 @@
-#import sys
-#sys.stdout = sys.__stdout__
-#sys.stderr = sys.__stderr__
-
 import sys
 import os
 import json
@@ -31,14 +27,8 @@ IS_WIN = os.name=='nt'
 _MAXLINE = 65536
 
 API_URL = 'https://server.codeium.com'
-HEADERS_JSON            = { 'Content-Type': 'application/json' }
-HEADERS_CONNECT_PROTO   = {
-    'Content-Type': 'application/connect+proto',
-    'connect-protocol-version': '1',
-    #'connect-accept-encoding': 'gzip,br',
-    #'Connection': 'close',
-    #'Transfer-Encoding': 'chunked',
-}
+HEADERS_JSON       = { 'Content-Type': 'application/json' }
+HEADERS_GRPC_PROTO = { 'Content-Type': 'application/grpc+proto' }
 SNIP_ID = PLUGIN_NAME+'__snip'
 
 if sys.platform == 'linux' and 'arm' in sys.version.lower():
@@ -60,6 +50,9 @@ option_api_key = ''
 Item = namedtuple('Item', 'hint text suffix text_inline text_inline_mask text_block start_position end_position cursor_offset')
 
 SESSION_ID = str(uuid.uuid4())
+
+class CancelException(Exception):
+    pass
 
 class Command:
     
@@ -85,6 +78,8 @@ class Command:
         
         self.conversations = {}
         self.in_process_of_creating_new_tab = False
+        self.in_process_of_answering = False
+        self.cancel = False
         self.messages = []
         
     def get_token(self):
@@ -385,6 +380,11 @@ class Command:
             self.request_GetChatMessage(question)
     
     def request_GetChatMessage(self, question):
+        if self.in_process_of_answering:
+            self.cancel = True
+            timer_proc(TIMER_START_ONE, lambda _: self.request_GetChatMessage(question), 10)
+            return
+        
         url = 'http://127.0.0.1:{}/exa.language_server_pb.LanguageServerService/GetChatMessage'.format(
             self.port
         )
@@ -424,124 +424,86 @@ class Command:
         self.messages.append(chat_message)
         GetChatMessage_data.chat_messages.extend(self.messages)
         
-        
-        
-        #recordChat_data = proto_pb2.RecordChatPanelSessionRequest()
-        #recordChat_data.metadata.CopyFrom(metadata)
-        ##recordChat_data.startTimestamp.CopyFrom(timestamp)
-        #recordChat_data.endTimestamp.CopyFrom(timestamp)
-        #
-        #data = recordChat_data.SerializeToString()
-        #compression_flag = b'\x00'
-        #data = compression_flag + len(data).to_bytes(4, 'big') + data
-        #
-        #try:
-        #    response = requests.post(url, headers=HEADERS_CONNECT_PROTO, data=data, timeout=8)
-        #    response.raise_for_status()
-        #    print("response.content:", response.content)
-        #    
-        #except requests.exceptions.Timeout:
-        #    print("ERROR: RecordChatPanelSession failed: The request timed out.")
-        #    return
-        #except requests.exceptions.RequestException as e:
-        #    print("ERROR: RecordChatPanelSession failed. Error:", e)
-        #    return
-        
-        
-        
         data = GetChatMessage_data.SerializeToString()
         compression_flag = b'\x00'
         data = compression_flag + len(data).to_bytes(4, 'big') + data
         
         msg_status('{}: waiting for bot..'.format(self.name), process_messages=True)
         
+        self.in_process_of_answering = True
+        messages = []
         try:
-            response = requests.post(url, headers=HEADERS_CONNECT_PROTO, data=data, timeout=8, stream=True)
+            response = requests.post(url, headers=HEADERS_GRPC_PROTO, data=data, timeout=8, stream=True)
             response.raise_for_status()
-            messages = []
-            partial_chunk = b''
             ed_handle = None
             error_count = 0
             
-            for data in response.iter_content(chunk_size=8192):
-                while data:
-                    #print("data len", len(data))
-                    #print("partial_chunk len", len(partial_chunk))
-                    #if len(partial_chunk) > 0:
-                        #raise
-                    data = partial_chunk + data # prepend previous chunk if any
-                    current_chunk = data # remember bytes, just in case
-                    data = data[1:] # cut compressed flag from data
-                    msg_length = int.from_bytes(data[0:4], 'big')
-                    
-                    if msg_length < 10: # small msg can't be parsed (this is final empty message)
-                        break
-                    
-                    data = data[4:] # cut msg_length integer
-                    
-                    if msg_length > len(data)+2:
-                        pass
-                        #print("ERROR: msg_length is bigger then data len: ", msg_length, '>', len(data))
-                        #raise 
-                    
-                    msg = None
-                    try:
-                        msg = proto_pb2.GetChatMessageResponse().FromString(data[:msg_length])
-                    except Exception as e:
-                        #print("ERROR:", e, ':', data)
-                        #print("ERROR: can't decode chunk, let's save it to use with next chunk")
-                        #print("ERROR: current_chunk", current_chunk)
-                        #raise
-                        error_count += 1
-                        if error_count > 10:
-                            print("ERROR: too many errors, aborting task.")
-                            return
-                        partial_chunk = current_chunk
-                        continue
+            buffer = bytearray()
+            for i, data in enumerate(response.iter_content(chunk_size=8192)):
+                if self.cancel:
+                    raise CancelException
+                
+                buffer.extend(data)
+                
+                if len(buffer) >= 4:
+                    message_size = int.from_bytes(buffer[1:5], byteorder='big')
+                    if len(buffer) >= message_size + 5:
+                        message_data = buffer[5:message_size + 5]
+                        buffer = buffer[message_size + 5:]
                         
-                    data = data[msg_length:] # cut parsed chunk
-                    
-                    if msg is None:
-                        continue
-                    partial_chunk = b''
-                    
-                    messages.append(msg)
-                    
-                    editor = self.get_editor(msg.chat_message.conversationId, question)
-                    editor.set_prop(PROP_CARET_VIEW, '-100,-100')
-                    editor.focus()
-                    
-                    from .google.protobuf.internal import encoder, decoder
-                    
-                    buf = messages[-1].chat_message.action.text
-                    if buf:
-                        # first byte is '\n' for some reason. some kind of mark?
-                        buf = buf[1:] # skip it
-                        # next we have varint? seems it's text size? what for? decode it and skip
-                        varint, varint_len = decoder._DecodeVarint(buf, 0)
-                        buf = buf[varint_len:]
-                    
-                    editor.set_text_all(buf.decode('utf-8', errors='replace'))
-                    
-                    
-                    editor.cmd(cmds.cCommand_GotoTextEnd)
-                    app_idle()
+                        msg = None
+                        try:
+                            msg = proto_pb2.GetChatMessageResponse().FromString(message_data)
+                        except Exception as e:
+                            print("ERROR:", e)
+                            error_count += 1
+                            if error_count > 2:
+                                print("ERROR: too many errors, aborting task.")
+                                return
+                            continue
                         
+                        messages.append(msg)
+                        editor = self.get_editor(msg.chat_message.conversationId, question)
+                        editor.set_prop(PROP_CARET_VIEW, '-100,-100')
+                        if i == 0:
+                            editor.focus()
+                        from .google.protobuf.internal import encoder, decoder
+                        buf = messages[-1].chat_message.action.text
+                        if buf:
+                            # first byte is '\n' for some reason. some kind of mark?
+                            buf = buf[1:] # skip it
+                            # next we have varint? seems it's text size? what for? decode it and skip
+                            varint, varint_len = decoder._DecodeVarint(buf, 0)
+                            buf = buf[varint_len:]
+                        editor.set_text_all(buf.decode('utf-8', errors='replace'))
+                        editor.cmd(cmds.cCommand_GotoTextEnd)
+                        app_idle()
+            
             if not messages:
                 print("{}: NOTE: no answer :(".format(self.name))
             else:
                 msg_status('{}: answer recieved'.format(self.name), process_messages=True)
-                editor.set_prop(PROP_CARET_VIEW, self.caret_view)
-                
                 self.messages.append(messages[-1].chat_message)
             return
-            
+                    
         except requests.exceptions.Timeout:
             print("ERROR: GetChatMessage failed: The request timed out.")
             return
         except requests.exceptions.RequestException as e:
             print("ERROR: GetChatMessage failed. Error:", e)
             return
+        except CancelException:
+            #print("ERROR: User canceled request.")
+            pass
+        finally:
+            self.cancel = False
+            self.in_process_of_answering = False
+            
+            if messages:
+                editor.set_prop(PROP_CARET_VIEW, self.caret_view)
+                editor.set_prop(PROP_MODIFIED, False)
+                for line in range(editor.get_line_count()):
+                    editor.set_prop(PROP_LINE_STATE, (line, LINESTATE_NORMAL))
             
     def get_editor(self, conversation_id, question):
         ed_handle = self.conversations.get(conversation_id, None)
@@ -613,9 +575,6 @@ class Command:
         result_str = result.decode('utf-8')
         result_json = json.loads(result_str)
         
-        #print("get_completions:", result_json)
-        
-        #print("message: ", result_json['state'])
         items = result_json.get('completionItems', [])
         return items
         
@@ -802,11 +761,9 @@ class Dialog:
         
         idc=dlg_proc(h, DLG_CTL_ADD, 'editor');
         dlg_proc(h, DLG_CTL_PROP_SET, index=idc, prop={
-            #'border': DBORDER_NONE,
             'name': 'memo',
             'align': ALIGN_CLIENT,
             'font_size': font_size,
-            #'sp_a': 2,
             'on_key_down': cls.on_key_down,
         })
         memo = Editor(dlg_proc(h, DLG_CTL_HANDLE, index=idc))
