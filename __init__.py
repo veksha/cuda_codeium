@@ -79,7 +79,6 @@ class Command:
         global option_append_mode
         option_token = ini_read(fn_config, 'op', 'token', option_token)
         option_api_key = ini_read(fn_config, 'op', 'api_key', option_api_key)
-        print("bool_to_str(option_append_mode)", bool_to_str(option_append_mode))
         option_append_mode = str_to_bool(ini_read(fn_config, 'op', 'append_mode', bool_to_str(option_append_mode)))
         self.token = option_token
         self.api_key = option_api_key
