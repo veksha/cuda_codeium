@@ -36,3 +36,7 @@ caption=Codeium\Shutdown
 method=shutdown
 
 
+[item7]
+section=commands
+caption=Codeium\Config
+method=config

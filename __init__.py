@@ -44,9 +44,12 @@ elif sys.platform == 'darwin':
 else:
     BIN_SUFFIX = 'windows_x64.exe'
 
+def bool_to_str(v): return '1' if v else '0'
+def str_to_bool(s): return s=='1'
 fn_config = os.path.join(app_path(APP_DIR_SETTINGS), PLUGIN_NAME+'.ini')
 option_token = ''
 option_api_key = ''
+option_append_mode = True
 
 
 Item = namedtuple('Item', 'hint text suffix text_inline text_inline_mask text_block start_position end_position cursor_offset')
@@ -73,8 +76,11 @@ class Command:
         
         global option_token
         global option_api_key
+        global option_append_mode
         option_token = ini_read(fn_config, 'op', 'token', option_token)
         option_api_key = ini_read(fn_config, 'op', 'api_key', option_api_key)
+        print("bool_to_str(option_append_mode)", bool_to_str(option_append_mode))
+        option_append_mode = str_to_bool(ini_read(fn_config, 'op', 'append_mode', bool_to_str(option_append_mode)))
         self.token = option_token
         self.api_key = option_api_key
         
@@ -83,6 +89,10 @@ class Command:
         self.in_process_of_answering = False
         self.cancel = False
         self.messages = []
+        
+    def config(self):
+        ini_write(fn_config, 'op', 'append_mode', bool_to_str(option_append_mode))
+        file_open(fn_config)
         
     def get_token(self):
         url = 'https://www.codeium.com/profile?response_type=token&redirect_uri=vim-show-auth-token&state=a&scope=openid+profile+email&redirect_parameters_type=query'
@@ -377,6 +387,16 @@ class Command:
                 app_idle()
                 time.sleep(0.001)
     
+    def set_text(self, editor: Editor, question, text):
+        editor.set_text_all('### User:\n{}\n\n### Bot:\n{}'.format(question, text))
+        editor.cmd(cmds.cCommand_GotoTextEnd)
+    
+    def append_text(self, editor: Editor, text):
+        editor.cmd(cmds.cCommand_GotoTextEnd)
+        x, y = editor.get_carets()[0][:2]
+        editor.insert(x, y, text)
+        editor.cmd(cmds.cCommand_GotoTextEnd)
+    
     def Ask(self):
         if self.port is None:
             self.log_in()
@@ -450,10 +470,13 @@ class Command:
             response.raise_for_status()
             ed_handle = None
             error_count = 0
+            prev_text_len = 0
             
             buffer = bytearray()
             for i, data in enumerate(response.iter_content(chunk_size=8192)):
                 if self.cancel:
+                    if messages: # partial answer must be saved to context as well
+                        self.messages.append(messages[-1].chat_message)
                     raise CancelException
                 
                 buffer.extend(data)
@@ -488,13 +511,16 @@ class Command:
                             # next we have varint? seems it's text size? what for? decode it and skip
                             varint, varint_len = decoder._DecodeVarint(buf, 0)
                             buf = buf[varint_len:]
-                        editor.set_text_all(
-                            'User: {}\n\nBot: {}'.format(
-                                question,
-                                buf.decode('utf-8', errors='replace')
-                            )
-                        )
-                        editor.cmd(cmds.cCommand_GotoTextEnd)
+                        text = buf.decode('utf-8', errors='replace')
+                        if option_append_mode:
+                            if i == 0:
+                                if editor.get_line_count() > 1:
+                                    self.append_text(editor, '\n\n')
+                                self.append_text(editor, '### User:\n{}\n\n### Bot:\n'.format(question))
+                            self.append_text(editor, text[prev_text_len:])
+                            prev_text_len = len(text)
+                        else:
+                            self.set_text(editor, question, text)
                         app_idle()
             
             if not messages:
