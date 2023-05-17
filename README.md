@@ -21,6 +21,10 @@ For chatting with AI, use command `Codeium: Chat...`
 
 Enjoy!
 
+#### Configuration
+
+`append_mode` - new chat questions/answers will be appended to old ones. disable it to clear chat on every question.
+
 ![cudatext_DwcXM8U7Og](https://github.com/veksha/cuda_codeium/assets/275333/83f42674-709b-43a3-a2cb-83a909c1014e)
 
 ![ezgif com-gif-maker](https://github.com/veksha/cuda_codeium/assets/275333/37111177-76aa-4a80-9580-b5c17de7281a)
