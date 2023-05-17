@@ -498,7 +498,7 @@ class Command:
                         app_idle()
             
             if not messages:
-                print("{}: NOTE: no answer :(".format(self.name))
+                msg_status('{}: no answer :('.format(self.name), process_messages=True)
             else:
                 msg_status('{}: answer recieved'.format(self.name), process_messages=True)
                 self.messages.append(messages[-1].chat_message)
