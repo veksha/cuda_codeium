@@ -86,6 +86,7 @@ class Command:
         self.conversations = {}
         self.in_process_of_creating_new_tab = False
         self.in_process_of_answering = False
+        self.in_process_of_asking = False
         self.cancel = False
         self.messages = []
         
@@ -397,20 +398,25 @@ class Command:
         editor.cmd(cmds.cCommand_GotoTextEnd)
     
     def Ask(self):
-        if self.port is None:
-            self.log_in()
+        if self.in_process_of_asking:
+            return
+        
+        self.in_process_of_asking = True
+        try:
             if self.port is None:
-                return
+                self.log_in()
             
-        if self.in_process_of_creating_new_tab:
-            timer_proc(TIMER_START_ONE, lambda _: self.Ask(), 10)
-        else:
-            #question = dlg_input('Enter your question:', '')
-            question = Dialog.input()
-            
-            if question is None:
-                return
-            self.request_GetChatMessage(question)
+            if self.port is not None:
+                if self.in_process_of_creating_new_tab:
+                    timer_proc(TIMER_START_ONE, lambda _: self.Ask(), 10)
+                else:
+                    #question = dlg_input('Enter your question:', '')
+                    question = Dialog.input()
+                    
+                    if question is not None:
+                        self.request_GetChatMessage(question)
+        finally:
+            self.in_process_of_asking = False
     
     def request_GetChatMessage(self, question):
         if self.in_process_of_answering:
@@ -462,6 +468,7 @@ class Command:
         
         msg_status('{}: waiting for bot..'.format(self.name), process_messages=True)
         
+        self.in_process_of_asking = False
         self.in_process_of_answering = True
         messages = []
         try:
