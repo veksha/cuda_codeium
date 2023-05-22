@@ -1,3 +1,6 @@
+2023.05.22
++ add: update tab title on every question
+
 2023.05.18
 + fix: protect from opening chat Ask Dialog twice
 

@@ -509,6 +509,7 @@ class Command:
                         editor.set_prop(PROP_CARET_VIEW, '-100,-100')
                         if i == 0:
                             editor.focus()
+                            self.update_tab_title(editor, question)
                         from .google.protobuf.internal import encoder, decoder
                         buf = messages[-1].chat_message.action.text
                         if buf:
@@ -555,6 +556,10 @@ class Command:
                 for line in range(editor.get_line_count()):
                     editor.set_prop(PROP_LINE_STATE, (line, LINESTATE_NORMAL))
             
+    def update_tab_title(self, editor, title):
+        title = title.replace('\n', ' ')[:50]
+        editor.set_prop(PROP_TAB_TITLE, 'Bot | {}'.format(title))
+    
     def get_editor(self, conversation_id, question):
         ed_handle = self.conversations.get(conversation_id, None)
         if not ed_handle:
@@ -564,8 +569,7 @@ class Command:
             self.conversations[conversation_id] = ed_handle
             self.in_process_of_creating_new_tab = False
 
-            tab_title = question.replace('\n', ' ')[:50]
-            ed.set_prop(PROP_TAB_TITLE, 'Bot | {}'.format(tab_title))
+            self.update_tab_title(ed, question)
             ed.set_prop(PROP_LEXER_FILE, 'Markdown')
             #ed.set_prop(PROP_LEXER_FILE, 'Log files ^')
             ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
