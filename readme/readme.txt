@@ -24,6 +24,11 @@ Enjoy!
 
 `append_mode` - new chat questions/answers will be appended to old ones. disable it to clear chat on every question.
 
+#### FAQ
+
+ - How to stop request?
+ - User can stop request by pressing ESC/Space/Enter
+
 
 Author: veksha (https://github.com/veksha)
 License: MIT
