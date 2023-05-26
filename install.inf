@@ -8,7 +8,7 @@ os=win-x86_64,linux-x86_64,linux-aarch64,macos
 
 [item1]
 section=events
-events=on_snippet~,on_close~,on_exit~
+events=on_snippet~,on_close~,on_exit~,on_key~
 
 [item2]
 section=commands

@@ -663,6 +663,14 @@ class Command:
 
     def on_exit(self, ed_self):
         self.shutdown()
+        
+    def on_key(self, ed_self, key, state):
+        if self.in_process_of_answering and key in (13, 27, 32):
+            ed_h = ed_self.get_prop(PROP_HANDLE_SELF)
+            if ed_h in self.conversations.values():
+                self.cancel = True
+                msg_status('{}: User canceled request.'.format(self.name))
+              
 
 
 language_enum = {
