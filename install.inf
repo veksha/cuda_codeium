@@ -8,35 +8,41 @@ os=win-x86_64,linux-x86_64,linux-aarch64,macos
 
 [item1]
 section=events
-events=on_snippet~,on_close~,on_exit~,on_key~
+events=on_snippet~,on_close~,on_exit~
 
 [item2]
+section=events
+events=on_key~
+keys=13,27,32
+
+[item3]
 section=commands
 caption=Codeium\Get new token...
 method=get_token
 
-[item3]
+[item4]
 section=commands
 caption=Codeium\Log in
 method=log_in
 
-[item4]
+[item5]
 section=commands
 caption=Codeium\Get completions
 method=get_completions
 
-[item5]
+[item6]
 section=commands
 caption=Codeium\Chat...
 method=Ask
 
-[item6]
+[item7]
 section=commands
 caption=Codeium\Shutdown
 method=shutdown
 
 
-[item7]
+[item8]
 section=commands
 caption=Codeium\Config
 method=config
+
