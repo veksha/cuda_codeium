@@ -564,8 +564,7 @@ class Command:
         ed_handle = self.conversations.get(conversation_id, None)
         if not ed_handle:
             self.in_process_of_creating_new_tab = True
-            ed.cmd(cmds.cmd_FileNew)
-            app_idle(False)
+            file_open('')
             if ed.get_filename('*') == '' and ed.get_text_all() == '': # ensure we are at correct tab
                 ed_handle = ed.get_prop(PROP_HANDLE_SELF)
                 self.conversations[conversation_id] = ed_handle
