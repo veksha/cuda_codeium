@@ -565,15 +565,16 @@ class Command:
         if not ed_handle:
             self.in_process_of_creating_new_tab = True
             ed.cmd(cmds.cmd_FileNew)
-            ed_handle = ed.get_prop(PROP_HANDLE_SELF)
-            self.conversations[conversation_id] = ed_handle
-            self.in_process_of_creating_new_tab = False
-
-            self.update_tab_title(ed, question)
-            ed.set_prop(PROP_LEXER_FILE, 'Markdown')
-            #ed.set_prop(PROP_LEXER_FILE, 'Log files ^')
-            ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
-            self.caret_view = ed.get_prop(PROP_CARET_VIEW)
+            app_idle(False)
+            if ed.get_filename('*') == '' and ed.get_text_all() == '': # ensure we are at correct tab
+                ed_handle = ed.get_prop(PROP_HANDLE_SELF)
+                self.conversations[conversation_id] = ed_handle
+                self.in_process_of_creating_new_tab = False
+    
+                self.update_tab_title(ed, question)
+                ed.set_prop(PROP_LEXER_FILE, 'Markdown')
+                ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
+                self.caret_view = ed.get_prop(PROP_CARET_VIEW)
         return Editor(ed_handle)
     
     def request_completions(self, *args):

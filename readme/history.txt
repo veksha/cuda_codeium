@@ -1,3 +1,6 @@
+2024.01.09
+- fix: protect from using incorrect tab for chat (workaround for macOS)
+
 2023.05.27
 + add: User can stop request by pressing ESC/Space/Enter
 
@@ -5,19 +8,19 @@
 + add: update tab title on every question
 
 2023.05.18
-+ fix: protect from opening chat Ask Dialog twice
+- fix: protect from opening chat Ask Dialog twice
 
 2023.05.17
 + add: new option append_mode (enabled by default) and new command "Config"
 
 2023.05.16
-+ fix: now waiting ~7.5 seconds for port file to appear
+- fix: now waiting ~7.5 seconds for port file to appear
 
 2023.05.15
-+ fix: error when bot answer is long
-+ fix: AI autocompletion errors when invoked on virtual space (caret)
-+ fix: make completion work on files with no lexer
-+ fix: ImportError (cannot import name 'builder' from 'google.protobuf.internal')
+- fix: error when bot answer is long
+- fix: AI autocompletion errors when invoked on virtual space (caret)
+- fix: make completion work on files with no lexer
+- fix: ImportError (cannot import name 'builder' from 'google.protobuf.internal')
 + add: insert quoted question to the beginning of the chat-reply
 
 2023.05.14
