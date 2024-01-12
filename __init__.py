@@ -50,7 +50,7 @@ fn_config = os.path.join(app_path(APP_DIR_SETTINGS), PLUGIN_NAME+'.ini')
 option_token = ''
 option_api_key = ''
 option_append_mode = True
-
+option_version = '1.6.22'
 
 Item = namedtuple('Item', 'hint text suffix text_inline text_inline_mask text_block start_position end_position cursor_offset')
 
@@ -66,7 +66,6 @@ class Command:
         self.port = None
         self.token = None
         self.api_key = None
-        self.language_server_version = '1.2.15'
         self.manager_dir = None
         self.text = '# print hello world in nim language\n'
         self.row = 1
@@ -77,9 +76,11 @@ class Command:
         global option_token
         global option_api_key
         global option_append_mode
+        global option_version
         option_token = ini_read(fn_config, 'op', 'token', option_token)
         option_api_key = ini_read(fn_config, 'op', 'api_key', option_api_key)
         option_append_mode = str_to_bool(ini_read(fn_config, 'op', 'append_mode', bool_to_str(option_append_mode)))
+        option_version = ini_read(fn_config, 'op', 'version', option_version)
         self.token = option_token
         self.api_key = option_api_key
         
@@ -92,6 +93,7 @@ class Command:
         
     def config(self):
         ini_write(fn_config, 'op', 'append_mode', bool_to_str(option_append_mode))
+        ini_write(fn_config, 'op', 'version', option_version)
         file_open(fn_config)
         
     def get_token(self):
@@ -134,7 +136,7 @@ class Command:
         
     def download_server(self, out_file):
         url = "https://github.com/Exafunction/codeium/releases/download/language-server-v{}/language_server_{}.gz".format(
-            self.language_server_version,
+            option_version,
             BIN_SUFFIX
         )
         
@@ -160,6 +162,44 @@ class Command:
         
         executable = os.path.join(codeium_dir,'language_server_'+BIN_SUFFIX)
         return executable
+    
+    def get_server_info(self):
+        import datetime
+        msg_status("Gathering Codeium server info..", True)
+        info = ''
+        local_timestamp = None
+        try:
+            ex = self.get_executable()
+            output = subprocess.check_output([ex, '--stamp']).decode()
+            import re
+            match = re.search(r'BUILD_TIMESTAMP: (\d+)', output)
+            if match is not None:
+                stamp = int(match.group(1))
+                local_timestamp = datetime.datetime.fromtimestamp(stamp)
+                info = "Executable: {}\nTimestamp: {}\nPort: {}\n\n".format(
+                    ex, local_timestamp, self.port
+                )
+        except:
+            info += "Can't get Codeium server binary info\n\n"
+            
+        info += "Version in config:\t{}\n".format(option_version)
+        
+        try:
+            url = "https://api.github.com/repos/Exafunction/codeium/releases/latest"
+            response = requests.get(url)
+            data = response.json()
+            new_timestamp = datetime.datetime.strptime(data['published_at'], '%Y-%m-%dT%H:%M:%SZ')
+            normal_format = new_timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            name = data['name'].lstrip("language-server-v")
+            new_version = "New version:\t\t{}\nTimestamp: {}".format(name, normal_format)
+            info += new_version
+            if local_timestamp is not None:
+                if local_timestamp < new_timestamp:
+                    info += "\n\nTo update your server binary, delete old one and change version in config."
+                
+        except:
+            info += "Can't get Codeium update info."
+        msg_box(info, MB_ICONINFO)
         
     def log_in(self):
         if self.process is not None:
@@ -362,7 +402,7 @@ class Command:
                     'api_key': self.api_key,
                     'ide_name': 'vscode',
                     'ide_version': '1.77.3',
-                    'extension_version': self.language_server_version,
+                    'extension_version': option_version,
                     }
             }
             
@@ -438,7 +478,7 @@ class Command:
         metadata.ide_name = "vscode"
         metadata.locale = "en"
         metadata.ide_version = "Visual Studio Code 1.77.3"
-        metadata.extension_version = self.language_server_version
+        metadata.extension_version = option_version
         metadata.extension_name = "vscode"
         metadata.session_id = SESSION_ID
         #metadata.session_id = "50d517c6-ac4a-4d44-ab20-1d48e12ee70d"
@@ -600,7 +640,7 @@ class Command:
                 'api_key': self.api_key,
                 'ide_name': 'vscode',
                 'ide_version': '1.77.3',
-                'extension_version': self.language_server_version,
+                'extension_version': option_version,
                 },
             'document': {
                 'text': self.text,

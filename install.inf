@@ -46,3 +46,8 @@ section=commands
 caption=Codeium\Config
 method=config
 
+[item9]
+section=commands
+caption=Codeium\Server info
+method=get_server_info
+

@@ -1,3 +1,10 @@
+2024.01.12
++ add: new "Server info" command. It will show info about downloaded server and new version at github.
+- fix: server version that will be downloaded for new users updated to "1.6.22"
+       old users must update manually by deleting old binary and changing version
+       in config.
++ add: new config option: "version"
+
 2024.01.09
 - fix: protect from using incorrect tab for chat (workaround for macOS)
 

@@ -25,6 +25,8 @@ Enjoy!
 
 `append_mode` - new chat questions/answers will be appended to old ones. disable it to clear chat on every question.
 
+`version` - locked version of language server. you can update by setting this option to a new value and deleting old server binary.
+
 #### FAQ
 
  - How to stop request?
