@@ -8,12 +8,12 @@ os=win-x86_64,linux-x86_64,linux-aarch64,macos
 
 [item1]
 section=events
-events=on_snippet~,on_close~,on_exit~
+events=on_snippet~,on_change_slow~,on_close~,on_caret~,on_click~,on_exit
 
 [item2]
 section=events
-events=on_key~
-keys=13,27,32
+events=on_key~+
+keys=13,27,32,9
 
 [item3]
 section=commands
@@ -50,4 +50,9 @@ method=config
 section=commands
 caption=Codeium\Server info
 method=get_server_info
+
+[item10]
+section=commands
+caption=Codeium\Toggle: log in on startup
+method=toggle_log_in_on_startup
 

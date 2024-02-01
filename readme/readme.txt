@@ -22,6 +22,8 @@ Enjoy!
 
 #### Configuration
 
+`tab_completion` - completion by using TAB key. completion hint will be shown in the top-right corner.
+
 `append_mode` - new chat questions/answers will be appended to old ones. disable it to clear chat on every question.
 
 `version` - locked version of language server. you can update by setting this option to a new value and deleting old server binary.
@@ -30,6 +32,11 @@ Enjoy!
 
  - How to stop request?
  - User can stop request by pressing ESC/Space/Enter
+ 
+ - How to make tab completion hint appear faster?
+ - Tune the following CudaText settings:
+   "py_change_slow"
+   "ui_timer_idle"
 
 
 Author: veksha (https://github.com/veksha)

@@ -1,3 +1,10 @@
+2024.02.06
++ add: TAB completion support. new config option: "tab_completion".
++ add: new command "Toggle: Log in on startup". useful with tab_completion option.
++ add: chat dialog was redesigned. it's no longer MODAL and it remembers its position (until CudaText is closed).
++ add: editor (with codeium chat output) can be scrolled freely, while bot is answering.
+
+
 2024.01.12
 + add: new "Server info" command. It will show info about downloaded server and new version at github.
 - fix: server version that will be downloaded for new users updated to "1.6.22"

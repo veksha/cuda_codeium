@@ -1,30 +1,18 @@
-import sys
-import os
-import json
-import gzip
-import io
-import queue
-import subprocess
-from threading import Thread
-import requests
-import shutil
-import traceback
-import time
-import tempfile
+import os, sys, json, gzip, io, tempfile, subprocess, requests, shutil, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from collections import namedtuple
-import uuid
 
 from cudatext import *
 import cudax_lib as apx
 import cudatext_cmd as cmds
-import cudatext_keys as keys
 
-PLUGIN_NAME = 'cuda_codeium'
+from .dlg import Dialog
+from .util import split_text_by_length,language_enum,lex_ids,is_editor_valid
+
+PLUGIN_NAME = __name__
 LOG = False
 
 IS_WIN = os.name=='nt'
-_MAXLINE = 65536
 
 API_URL = 'https://server.codeium.com'
 HEADERS_JSON       = { 'Content-Type': 'application/json' }
@@ -51,14 +39,14 @@ option_token = ''
 option_api_key = ''
 option_append_mode = True
 option_version = '1.6.22'
+option_tab_completion = False
 
 Item = namedtuple('Item', 'hint text suffix text_inline text_inline_mask text_block start_position end_position cursor_offset')
 
 SESSION_ID = str(uuid.uuid4())
 
-class CancelException(Exception):
-    pass
-
+class CancelException(Exception): pass
+    
 class Command:
     
     def __init__(self):
@@ -77,9 +65,11 @@ class Command:
         global option_api_key
         global option_append_mode
         global option_version
+        global option_tab_completion
         option_token = ini_read(fn_config, 'op', 'token', option_token)
         option_api_key = ini_read(fn_config, 'op', 'api_key', option_api_key)
         option_append_mode = str_to_bool(ini_read(fn_config, 'op', 'append_mode', bool_to_str(option_append_mode)))
+        option_tab_completion = str_to_bool(ini_read(fn_config, 'op', 'tab_completion', bool_to_str(option_tab_completion)))
         option_version = ini_read(fn_config, 'op', 'version', option_version)
         self.token = option_token
         self.api_key = option_api_key
@@ -90,9 +80,18 @@ class Command:
         self.in_process_of_asking = False
         self.cancel = False
         self.messages = []
+        self.completions = []
+        self.completion_allowed = False
+        self.go_to_end = True
+        self.comp_requests_active = 0
+        self.comp_result_list = {}
+        self.shutting_down = False
+        self.ask_command_was_triggered = False
+        
         
     def config(self):
         ini_write(fn_config, 'op', 'append_mode', bool_to_str(option_append_mode))
+        ini_write(fn_config, 'op', 'tab_completion', bool_to_str(option_tab_completion))
         ini_write(fn_config, 'op', 'version', option_version)
         file_open(fn_config)
         
@@ -200,6 +199,17 @@ class Command:
         except:
             info += "Can't get Codeium update info."
         msg_box(info, MB_ICONINFO)
+    
+    def toggle_log_in_on_startup(self):
+        event = 'on_start2'
+        s = ini_read('plugins.ini', 'events', __name__, '')
+        s = '' if s == event else event
+        ini_write('plugins.ini', 'events', __name__, s)
+        
+        if s:
+            print('{}: Log in on startup enabled'.format(self.name))
+        else:
+            print('{}: Log in on startup disabled'.format(self.name))
         
     def log_in(self):
         if self.process is not None:
@@ -234,7 +244,9 @@ class Command:
         if not os.path.exists(self.executable):
             self.download_server(self.executable)
         
-        self.run_server(self.executable, self.manager_dir)
+        def sub(*args, **kwargs):
+            self.run_server(self.executable, self.manager_dir)
+        timer_proc(TIMER_START_ONE, sub, 50)
         
     def run_server(self, executable, manager_dir):
         if not IS_WIN:
@@ -252,23 +264,38 @@ class Command:
         
         def wait_for_port_file():
             self.port = None
+            self.shutting_down = False
             n = 0
             while self.port is None:
                 self.find_port()
-                time.sleep(0.3)
-                if n > 25: # 0.3*25 - waiting ~7.5 seconds for port file
-                    print("ERROR: {}: {} {}{}".format(
-                        self.name, "port can't be found.","ensure executable is working: ", self.executable)
-                    )
-                    self.shutdown()
+                if self.port:
                     break
+                time.sleep(0.3)
                 n += 1
+                # 0.3*25 - waiting ~7.5 seconds for port file
+                if n > 25 or self.shutting_down:
+                    #print("ERROR: {}: {}".format(
+                    #    self.name, "port can't be found. please, try again.")
+                    #)
+                    self.shutdown()
+                    self.shutting_down = False
+                    break
                 
         with ThreadPoolExecutor() as ex:
             future = ex.submit(wait_for_port_file)
+            
             while not future.done():
                 app_idle()
                 time.sleep(0.001)
+            
+            if self.port:
+                timer_proc(TIMER_STOP,  self.heartbeat, 5000)
+                timer_proc(TIMER_START, self.heartbeat, 5000)
+                msg_status("{}: Logged in".format(self.name))
+                
+                if self.ask_command_was_triggered:
+                    self.ask_command_was_triggered = False
+                    timer_proc(TIMER_START_ONE, lambda _: self._ask(), 50)
         
     def find_port(self, tag=''):
         import re
@@ -277,94 +304,125 @@ class Command:
         if num_files:
             self.port = int(num_files[0])
             pass;    LOG and print("Found port:", self.port)
-            #print("Found port:", self.port)
-            timer_proc(TIMER_START, self.heartbeat, 5000)
-            msg_status("{}: Logged in".format(self.name))
             
-    def get_completions(self):
+            
+    def get_completions(self, use_hint=False):
+        self.hide_hint()
         if self.port is None:
             self.log_in()
             if self.port is None:
                 return
             
         with ThreadPoolExecutor() as ex:
+            self.comp_requests_active += 1
             future = ex.submit(self.request_completions)
             while not future.done():
                 app_idle()
                 time.sleep(0.001)
+            self.comp_requests_active -= 1
             items = future.result()
+            self.comp_result_list[self.comp_requests_active] = items
             
-            if items is None:
-                return
+        # we interested only in newest result
+        if self.comp_requests_active != 0:
+            return
+        
+        # newest is with max key (!)
+        max_key = max(self.comp_result_list.keys())
+        items = self.comp_result_list[max_key]
+
+        if items is None:
+            return
+        
+        self.comp_result_list.clear()
+        
+        result = 'result' if len(items) == 1 else 'results'
+        msg_status("{}: Got {} {}".format(self.name, len(items), result))
+        
+        ## debug
+        #ed.cmd(cmds.cmd_FileNew)
+        #ed.insert(0, 0, str(items))
+        
+        completions = []
+        for comp in items:
+            text = comp['completion']['text']
+            text_inline = ''
+            text_inline_mask = ''
+            text_block = ''
+            inline_num = 1
+            parts = comp.get('completionParts', [])
+            for part in parts:
+                if part['type'] == 'COMPLETION_PART_TYPE_INLINE':
+                    if inline_num == 1:
+                        text_inline = part['text']
+                    else:
+                        text_inline += part.get('prefix', '') + part['text']
+                    inline_num += 1
+                elif part['type'] == 'COMPLETION_PART_TYPE_INLINE_MASK':
+                    text_inline_mask = part['text']
+                elif part['type'] == 'COMPLETION_PART_TYPE_BLOCK':
+                    text_block = part['text']
+                    
+            #if inline_num > 1:
+                #print("ERROR: inline_num=", inline_num)
             
-            msg_status("{}: Got {} items".format(self.name, len(items)))
+            start_position = comp['range']['startPosition']
+            end_position   = comp['range']['endPosition']
+            start_position = (int(start_position.get('col', 0)), int(start_position.get('row', 0)))
+            end_position   = (int(end_position.get('col', 0)), int(end_position.get('row', 0)))
             
-            ## debug
-            #ed.cmd(cmds.cmd_FileNew)
-            #ed.insert(0, 0, str(items))
+            suffix = comp.get('suffix', None)
+            cursor_offset = int(suffix.get('deltaCursorOffset', 0)) if suffix else 0
+            suffix = suffix['text'] if suffix else ''
             
-            completions = []
-            for comp in items:
-                text = comp['completion']['text']
-                text_inline = ''
-                text_inline_mask = ''
-                text_block = ''
-                inline_num = 1
-                parts = comp.get('completionParts', [])
-                for part in parts:
-                    if part['type'] == 'COMPLETION_PART_TYPE_INLINE':
-                        if inline_num == 1:
-                            text_inline = part['text']
-                        else:
-                            text_inline += part.get('prefix', '') + part['text']
-                        inline_num += 1
-                    elif part['type'] == 'COMPLETION_PART_TYPE_INLINE_MASK':
-                        text_inline_mask = part['text']
-                    elif part['type'] == 'COMPLETION_PART_TYPE_BLOCK':
-                        text_block = part['text']
-                        
-                #if inline_num > 1:
-                    #print("ERROR: inline_num=", inline_num)
-                
-                start_position = comp['range']['startPosition']
-                end_position   = comp['range']['endPosition']
-                start_position = (int(start_position.get('col', 0)), int(start_position.get('row', 0)))
-                end_position   = (int(end_position.get('col', 0)), int(end_position.get('row', 0)))
-                
-                suffix = comp.get('suffix', None)
-                cursor_offset = int(suffix.get('deltaCursorOffset', 0)) if suffix else 0
-                suffix = suffix['text'] if suffix else ''
-                
-                def rep_chars(text):
-                    return text.replace('\n',' ').replace('\t',' ')
-                
-                if text_inline:
-                    hint = rep_chars(text_inline) + ' ' + rep_chars(text_block)
-                else:
-                    hint = rep_chars(text)
-                
-                completions.append(Item(
-                    hint,
-                    text,
-                    suffix,
-                    text_inline,
-                    text_inline_mask,
-                    text_block,
-                    start_position,
-                    end_position,
-                    cursor_offset,
-                ))
+            def rep_chars(text):
+                return text.replace('\n',' ').replace('\t',' ')
             
-            self.completions = completions
+            if text_inline:
+                hint = rep_chars(text_inline) + ' ' + rep_chars(text_block)
+            else:
+                hint = rep_chars(text)
             
-            words = ['{}\t{}\t{}|{}'.format(
-                        item.hint,
-                        '',
-                        '', i)
-                        for i,item in enumerate(completions)
-                    ]
-            
+            completions.append(Item(
+                hint.strip(),
+                text,
+                suffix,
+                text_inline,
+                text_inline_mask,
+                text_block,
+                start_position,
+                end_position,
+                cursor_offset,
+            ))
+        
+        self.completions = completions
+        
+        words = ['{}\t{}\t{}|{}'.format(
+                    item.hint,
+                    '',
+                    '', i)
+                    for i,item in enumerate(completions)
+                ]
+        
+        if use_hint:
+            if completions:
+                #hint = completions[0].hint
+                hint = completions[0].text + completions[0].suffix
+                self.show_hint(hint)
+            else:
+                self.hide_hint()
+        else:
             ed.complete_alt('\n'.join(words), SNIP_ID, len_chars=0)
+
+    def show_hint(self, hint):
+        ed.set_prop(PROP_CORNER2_COLOR_FONT, 0x676767)
+        ed.set_prop(PROP_CORNER2_COLOR_BACK, 0xf4f4f4)
+        ed.set_prop(PROP_CORNER2_TEXT, split_text_by_length(hint.strip(), 50, padding=True))
+        self.completion_allowed = True
+    
+    def hide_hint(self):
+        ed.set_prop(PROP_CORNER2_TEXT, '')
+        self.completion_allowed = False
 
     def on_snippet(self, ed_self: Editor, snippet_id, snippet_text):
         if snippet_id != SNIP_ID or '|' not in snippet_text:
@@ -427,17 +485,46 @@ class Command:
                 app_idle()
                 time.sleep(0.001)
     
+    def on_click(self, ed_self, state):
+        if self.go_to_end:
+            ed_self.set_prop(PROP_SCROLL_VERT_SMOOTH, ed_self.get_prop(PROP_SCROLL_VERT_SMOOTH)-1)
+            ed_self.cmd(cmds.cmd_MouseClickAtCursor)
+        self.go_to_end = False
+    
+    def goto_end(self, editor: Editor):
+        info = editor.get_prop(PROP_SCROLL_VERT_INFO)
+        smooth_pos = info['smooth_pos']
+        smooth_pos_last = info['smooth_pos_last']
+        scroll_at_end = (abs(smooth_pos_last - smooth_pos) < 2)
+        
+        if self.go_to_end and scroll_at_end:
+            editor.cmd(cmds.cCommand_GotoTextEnd) # moves caret
+        
+        # if caret on last line
+        last_line = editor.get_line_count()-1
+        y = editor.get_carets()[0][1]
+        if y == last_line:
+            self.go_to_end = True
+        # if not, but scrolled to end with mouse wheel
+        elif smooth_pos != 0 and scroll_at_end:
+            self.go_to_end = True
+    
     def set_text(self, editor: Editor, question, text):
         editor.set_text_all('### User:\n{}\n\n### Bot:\n{}'.format(question, text))
-        editor.cmd(cmds.cCommand_GotoTextEnd)
+        self.goto_end(editor)
     
     def append_text(self, editor: Editor, text):
-        editor.cmd(cmds.cCommand_GotoTextEnd)
-        x, y = editor.get_carets()[0][:2]
-        editor.insert(x, y, text)
-        editor.cmd(cmds.cCommand_GotoTextEnd)
+        last_line = editor.get_line_count()-1
+        last_line_len = editor.get_line_len(last_line)
+        
+        editor.insert(last_line_len, last_line, text)
+        self.goto_end(editor)
     
     def Ask(self):
+        self.ask_command_was_triggered = True
+        self._ask()
+        
+    def _ask(self):
         if self.in_process_of_asking:
             return
         
@@ -445,16 +532,14 @@ class Command:
         try:
             if self.port is None:
                 self.log_in()
-            
             if self.port is not None:
                 if self.in_process_of_creating_new_tab:
-                    timer_proc(TIMER_START_ONE, lambda _: self.Ask(), 10)
+                    timer_proc(TIMER_START_ONE, lambda _: self._ask(), 100)
                 else:
-                    #question = dlg_input('Enter your question:', '')
-                    question = Dialog.input()
-                    
-                    if question is not None:
-                        self.request_GetChatMessage(question)
+                    def callback(question):
+                        if question:
+                            self.request_GetChatMessage(question)
+                    Dialog.input(callback)
         finally:
             self.in_process_of_asking = False
     
@@ -514,7 +599,6 @@ class Command:
         try:
             response = requests.post(url, headers=HEADERS_GRPC_PROTO, data=data, timeout=8, stream=True)
             response.raise_for_status()
-            ed_handle = None
             error_count = 0
             prev_text_len = 0
             
@@ -546,11 +630,13 @@ class Command:
                         
                         messages.append(msg)
                         editor = self.get_editor(msg.chat_message.conversationId, question)
+                        if not is_editor_valid(editor):
+                            raise CancelException
                         editor.set_prop(PROP_CARET_VIEW, '-100,-100')
                         if i == 0:
                             editor.focus()
                             self.update_tab_title(editor, question)
-                        from .google.protobuf.internal import encoder, decoder
+                        from .google.protobuf.internal import decoder
                         buf = messages[-1].chat_message.action.text
                         if buf:
                             # first byte is '\n' for some reason. some kind of mark?
@@ -563,6 +649,8 @@ class Command:
                             if i == 0:
                                 if editor.get_line_count() > 1:
                                     self.append_text(editor, '\n\n')
+                                self.go_to_end = True
+                                editor.cmd(cmds.cCommand_GotoTextEnd)
                                 self.append_text(editor, '### User:\n{}\n\n### Bot:\n'.format(question))
                             self.append_text(editor, text[prev_text_len:])
                             prev_text_len = len(text)
@@ -588,9 +676,12 @@ class Command:
             pass
         finally:
             self.cancel = False
-            self.in_process_of_answering = False
             
-            if messages:
+            def sub(*args, **kwargs):
+                self.in_process_of_answering = False
+            timer_proc(TIMER_START_ONE, sub, 2000) # 2000 ~ py_caret_slow
+            
+            if messages and is_editor_valid(editor):
                 editor.set_prop(PROP_CARET_VIEW, self.caret_view)
                 editor.set_prop(PROP_MODIFIED, False)
                 for line in range(editor.get_line_count()):
@@ -613,6 +704,7 @@ class Command:
                 self.update_tab_title(ed, question)
                 ed.set_prop(PROP_LEXER_FILE, 'Markdown')
                 ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
+                ed.set_prop(PROP_LAST_LINE_ON_TOP, False)
                 self.caret_view = ed.get_prop(PROP_CARET_VIEW)
         return Editor(ed_handle)
     
@@ -628,6 +720,8 @@ class Command:
         self.text = ed.get_text_all()
         self.col, self.row = ed.get_carets()[0][:2]
         line_len = ed.get_line_len(self.row)
+        if line_len is None:
+            return # fix TypeError: '>' not supported between instances of 'NoneType' and 'int'
         if line_len > 0 and self.col > line_len:
            self.col = line_len
         
@@ -663,7 +757,8 @@ class Command:
             response = requests.post(url, headers=HEADERS_JSON, data=json.dumps(data), timeout=4)
             response.raise_for_status()
         except requests.exceptions.Timeout:
-            print("ERROR: Can't get completions: The request timed out")
+            # no need to print
+            #print("ERROR: Can't get completions: The request timed out")
             return
         except requests.exceptions.RequestException as e:
             print("ERROR: Can't get completions. Error:", e)
@@ -679,7 +774,10 @@ class Command:
     def shutdown(self, *args, **vargs):
         msg_status('{}: Shutting down'.format(self.name))
         
+        self.shutting_down = True
         self.port = None
+        timer_proc(TIMER_STOP,  self.heartbeat, 5000)
+        
         if self.process:
             if IS_WIN:
                 startupinfo = subprocess.STARTUPINFO()
@@ -700,6 +798,9 @@ class Command:
         
         for conversation_id in to_pop:
             self.conversations.pop(conversation_id, None)
+        
+        if to_pop:
+            self.cancel = True
 
     def on_exit(self, ed_self):
         self.shutdown()
@@ -710,196 +811,38 @@ class Command:
             if ed_h in self.conversations.values():
                 self.cancel = True
                 msg_status('{}: User canceled request.'.format(self.name))
-              
-
-
-language_enum = {
-    'unspecified': 0,
-    'c': 1,
-    'clojure': 2,
-    'coffeescript': 3,
-    'cpp': 4,
-    'csharp': 5,
-    'css': 6,
-    'cudacpp': 7,
-    'dockerfile': 8,
-    'go': 9,
-    'groovy': 10,
-    'handlebars': 11,
-    'haskell': 12,
-    'hcl': 13,
-    'html': 14,
-    'ini': 15,
-    'java': 16,
-    'javascript': 17,
-    'json': 18,
-    'julia': 19,
-    'kotlin': 20,
-    'latex': 21,
-    'less': 22,
-    'lua': 23,
-    'makefile': 24,
-    'markdown': 25,
-    'objectivec': 26,
-    'objectivecpp': 27,
-    'perl': 28,
-    'php': 29,
-    'plaintext': 30,
-    'protobuf': 31,
-    'pbtxt': 32,
-    'python': 33,
-    'r': 34,
-    'ruby': 35,
-    'rust': 36,
-    'sass': 37,
-    'scala': 38,
-    'scss': 39,
-    'shell': 40,
-    'sql': 41,
-    'starlark': 42,
-    'swift': 43,
-    'typescriptreact': 44,
-    'typescript': 45,
-    'visualbasic': 46,
-    'vue': 47,
-    'xml': 48,
-    'xsl': 49,
-    'yaml': 50,
-    'svelte': 51,
-}
-
-# taken from LSP plugin
-lex_ids = {
-    'ABAP': 'abap',
-    'Batch files': 'bat', # spec: 'Windows Bat'
-    'BibTeX': 'bibtex',
-    'Clojure': 'clojure',
-    'CoffeeScript': 'coffeescript', # spec: 'Coffeescript'
-    'C': 'c',
-    'C++': 'cpp',
-    'C#': 'csharp',
-    'CSS': 'css',
-    'Diff': 'diff',
-    'Dart': 'dart',
-    'Dockerfile': 'dockerfile',
-    'Elixir': 'elixir',
-    'Erlang': 'erlang',
-    'F#': 'fsharp',
-    #'Git': 'git-commit and git-rebase', #TODO
-    'Go': 'go',
-    'Groovy': 'groovy',
-    'HTML Handlebars': 'handlebars', # spec: 'Handlebars'
-    'HTML': 'html',
-    'Ini files': 'ini', # spec: 'Ini'
-    'Java': 'java',
-    'JavaScript': 'javascript',
-    #'JavaScript React': 'javascriptreact', # Not in CudaText
-    'JSON': 'json',
-    'LaTeX': 'latex',
-    'LESS': 'less', # spec: 'Less'
-    'Lua': 'lua',
-    'Makefile': 'makefile',
-    'Markdown': 'markdown',
-    'Objective-C': 'objective-c',
-    #'Objective-C++': 'objective-cpp', # Not in CudaText
-    'Perl': 'perl',
-    #'Perl 6': 'perl6', # Not in CudaText
-    'PHP': 'php',
-    'PowerShell': 'powershell', # spec: 'Powershell'
-    'Pug': 'jade',
-    'Python': 'python',
-    'R': 'r',
-    'Razor': 'razor', # spec: 'Razor (cshtml)'
-    'Ruby': 'ruby',
-    'Rust': 'rust',
-    #'SCSS': 'scss (syntax using curly brackets), sass (indented syntax)', #TODO
-    'Scala': 'scala',
-    #'ShaderLab': 'shaderlab', # not in CudaText
-    'Bash script': 'shellscript', # spec: 'Shell Script (Bash)'
-    'SQL': 'sql',
-    'Swift': 'swift',
-    'TypeScript': 'typescript',
-    #'TypeScript React': 'typescriptreact', # Not in CudaText
-    #'TeX': 'tex', # Not in CudaText
-    #'Visual Basic': 'vb', # Not in CudaText
-    'XML': 'xml',
-    'XSLT': 'xsl', # spec: 'XSL'
-    'YAML': 'yaml',
-}
-
-class Dialog:
-    text = ''
-    cancelled = True
+        elif key == 27:
+            self.hide_hint()
+        elif key == 9 and option_tab_completion:
+            if self.completions and self.completion_allowed:
+                item = self.completions[0]
+                  
+                new_caret = ed_self.replace(
+                    item.start_position[0],
+                    item.start_position[1],
+                    item.end_position[0],
+                    item.end_position[1],
+                    item.text + item.suffix
+                )
+                
+                if item.cursor_offset:
+                    offset = ed_self.convert(CONVERT_CARET_TO_OFFSET, new_caret[0], new_caret[1])
+                    offset += item.cursor_offset
+                    new_caret = ed_self.convert(CONVERT_OFFSET_TO_CARET, offset, 0)
+                    new_caret = (new_caret[0], new_caret[1], -1, -1)
+                
+                ed_self.set_caret(*new_caret)
+                
+                self.hide_hint()
+                return False 
     
-    @classmethod
-    def on_key_down(cls, id_dlg, id_ctl, data='', info=''):
-        key, mod = data
-        if mod == 'c' and key == keys.VK_ENTER:
-            cls.on_send(id_dlg, id_ctl)
+    def on_change_slow(self, ed_self):
+        if option_tab_completion and not self.in_process_of_answering:
+            self.get_completions(use_hint=True)
             
+    def on_caret(self, ed_self):
+        self.hide_hint()
     
-    @classmethod
-    def on_send(cls, id_dlg, id_ctl, data='', info=''):
-        cls.cancelled = False
-        memo = Editor(dlg_proc(id_dlg, DLG_CTL_HANDLE, name='memo'))
-        cls.text = memo.get_text_all()
-        dlg_proc(id_dlg, DLG_HIDE)
-        
-        
-    @classmethod
-    def input(cls):
-        h=dlg_proc(0, DLG_CREATE)
-        dlg_proc(h, DLG_PROP_SET, prop={
-            'cap': 'Codeium chat',
-            'w': 500,
-            'h': 400,
-        })
-        
-        _, font_size = ed.get_prop(PROP_FONT)
-        font_scale = ed.get_prop(PROP_SCALE_FONT)
-        
-        idc=dlg_proc(h, DLG_CTL_ADD, 'label');
-        dlg_proc(h, DLG_CTL_PROP_SET, index=idc, prop={
-            'cap': 'Enter your question below.\nCtrl+Enter to send.',
-            'align': ALIGN_TOP,
-            'sp_a': 2,
-        })
-        
-        idc=dlg_proc(h, DLG_CTL_ADD, 'editor');
-        dlg_proc(h, DLG_CTL_PROP_SET, index=idc, prop={
-            'name': 'memo',
-            'align': ALIGN_CLIENT,
-            'font_size': font_size,
-            'on_key_down': cls.on_key_down,
-        })
-        memo = Editor(dlg_proc(h, DLG_CTL_HANDLE, index=idc))
-        memo.set_prop(PROP_SCALE_FONT, font_scale)
-        if cls.cancelled:
-            memo.set_text_all(cls.text)
-        else:
-            cls.text = ''
-        cls.cancelled = True
-        
-        idc=dlg_proc(h, DLG_CTL_ADD, 'button');
-        dlg_proc(h, DLG_CTL_PROP_SET, index=idc, prop={
-           'name': 'btn_ok',
-           'cap': 'Send',
-           'align': ALIGN_BOTTOM,
-           'sp_a': 6,
-           'on_change': cls.on_send,
-           'ex0': True,
-        })
-        
-        dlg_proc(h, DLG_SCALE)
-        
-        timer_proc(TIMER_START_ONE, lambda _: memo.cmd(cmds.cCommand_GotoTextEnd), 10)
-        dlg_proc(h, DLG_SHOW_MODAL)
-        
-        if cls.cancelled:
-            cls.text = memo.get_text_all()
-        
-        dlg_proc(h, DLG_FREE)
-        
-        if not cls.cancelled:
-            return(cls.text or None)
+    def on_start2(self, ed_self):
+        self.log_in()
         
