@@ -4,36 +4,51 @@ def is_editor_valid(editor: Editor):
     return editor.get_prop(PROP_INDEX_TAB) != -1
 
 def split_text_by_length(text, max_length, padding=False):
-    lines_out = []
-    for line in text.split('\n'):
-        words = line.split()
-        parts = []
-        current_part = ''
-        for word in words:
-            if len(current_part) + len(word) <= max_length:
-                if current_part:
-                    current_part += ' ' + word
-                else:
-                    current_part = word
-            else:
-                parts.append(current_part)
-                current_part = word
-        if current_part:
-            parts.append(current_part)
-        
-        if padding:
-            s = line.strip()
-            if s:
-                spaces = line.index(s[0])
-                parts = [' ' * spaces + part for part in parts]
-
-        lines_out.extend(parts)
+    last_space = 0
+    last_newline = 0
+    cur_line = 0
+    out = ''
+    lines = text.split('\n')
     
+    i = 0
+    for c in text:
+        if c in (' ', '\t'):
+            last_space = i
+            out += c
+            i += 1
+            continue
+        elif c == '\n':
+            cur_line += 1
+            last_newline = i
+            out += c
+            i += 1
+            continue
+            
+        if i - last_newline <= max_length:
+            out += c
+            i += 1
+        else:
+            line = lines[cur_line]
+            indent = len(line) - len(line.lstrip())
+            indent_s = line[:indent]
+            
+            split_on_prev_space = i - last_space < i - last_newline
+            if split_on_prev_space and i - last_newline > indent:
+                out = out[:last_space] + '\n' + indent_s + out[last_space:] + c
+                i += indent + 2
+                last_newline = last_space
+            else:
+                out += c + '\n' + indent_s
+                i += indent + 2
+                last_newline = i
+        
     if padding:
+        lines_out = out.split('\n')
         max_length = max(len(line) for line in lines_out)
         lines_out = [line.ljust(max_length) for line in lines_out]
-
-    return '\n'.join(lines_out)
+        return lines_out
+    return out.split('\n')
+    
     
 language_enum = {
     'unspecified': 0,

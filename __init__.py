@@ -408,6 +408,11 @@ class Command:
             if completions:
                 #hint = completions[0].hint
                 hint = completions[0].text + completions[0].suffix
+                
+                # try next if current is empty
+                if hint.strip() == '' and len(completions) >= 2:
+                    hint = completions[1].text + completions[1].suffix
+                    
                 self.show_hint(hint)
             else:
                 self.hide_hint()
@@ -415,9 +420,16 @@ class Command:
             ed.complete_alt('\n'.join(words), SNIP_ID, len_chars=0)
 
     def show_hint(self, hint):
+        text = split_text_by_length(hint, 50, padding=True)
+        if '\n'.join(text).strip() == '':
+            return
+        
+        min_indent = min(len(line) - len(line.lstrip()) for line in text if line.strip())
+        text = [line[min_indent:] for line in text] 
+        
         ed.set_prop(PROP_CORNER2_COLOR_FONT, 0x676767)
         ed.set_prop(PROP_CORNER2_COLOR_BACK, 0xf4f4f4)
-        ed.set_prop(PROP_CORNER2_TEXT, split_text_by_length(hint.strip(), 50, padding=True))
+        ed.set_prop(PROP_CORNER2_TEXT, '\n'.join(text))
         self.completion_allowed = True
     
     def hide_hint(self):
