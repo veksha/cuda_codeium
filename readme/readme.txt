@@ -15,8 +15,11 @@ Plugin for CudaText.
   3. Copy token to clipboard, paste it to CudaText dialog which asks for it.
   Now you should be logged in. Server executable will be downloaded and started automatically.
 
-Do not forget to set hotkey for `Codeium: Get completions` command. For example Alt+\.
-For chatting with AI, use command `Codeium: Chat...` 
+To automatically start Codeium use "Toggle: log in on startup" command.
+"TAB completion" mode can be enabled with `tab_completion` option in config, use `Codeium: Config` command.
+Also you can set hotkey for `Get completions` command. For example Alt+\. This will give a list of completions.
+For chatting with AI, use command `Codeium: Chat...`
+
 
 Enjoy!
 
