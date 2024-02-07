@@ -498,10 +498,13 @@ class Command:
                 time.sleep(0.001)
     
     def on_click(self, ed_self, state):
-        if self.go_to_end:
-            ed_self.set_prop(PROP_SCROLL_VERT_SMOOTH, ed_self.get_prop(PROP_SCROLL_VERT_SMOOTH)-1)
-            ed_self.cmd(cmds.cmd_MouseClickAtCursor)
-        self.go_to_end = False
+        if (self.in_process_of_answering
+         and ed_self.get_prop(PROP_TAG, 'codeium:') == 'chat'):
+            
+            if self.go_to_end:
+                ed_self.set_prop(PROP_SCROLL_VERT_SMOOTH, ed_self.get_prop(PROP_SCROLL_VERT_SMOOTH)-1)
+                ed_self.cmd(cmds.cmd_MouseClickAtCursor)
+            self.go_to_end = False
     
     def goto_end(self, editor: Editor):
         info = editor.get_prop(PROP_SCROLL_VERT_INFO)
@@ -718,6 +721,7 @@ class Command:
                 ed.set_prop(PROP_WRAP, WRAP_ON_WINDOW)
                 ed.set_prop(PROP_LAST_LINE_ON_TOP, False)
                 self.caret_view = ed.get_prop(PROP_CARET_VIEW)
+                ed.set_prop(PROP_TAG, 'codeium:chat')
         return Editor(ed_handle)
     
     def request_completions(self, *args):
