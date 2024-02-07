@@ -773,7 +773,7 @@ class Command:
             #print("ERROR: Can't get completions: The request timed out")
             return
         except requests.exceptions.RequestException as e:
-            print("ERROR: Can't get completions. Error:", e)
+            #print("ERROR: Can't get completions. Error:", e)
             return
         result = response.content
         
