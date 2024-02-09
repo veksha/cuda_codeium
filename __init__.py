@@ -425,7 +425,8 @@ class Command:
             return
         
         min_indent = min(len(line) - len(line.lstrip()) for line in text if line.strip())
-        text = [line[min_indent:] for line in text] 
+        text = [' '+line[min_indent:] for line in text]
+        text[0] = "⏩" + text[0]
         
         ed.set_prop(PROP_CORNER2_COLOR_FONT, 0x676767)
         ed.set_prop(PROP_CORNER2_COLOR_BACK, 0xf4f4f4)
