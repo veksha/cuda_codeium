@@ -1,3 +1,11 @@
+2026.03.01
+- fix: server version that will be downloaded for new users updated to "1.48.2"
+       old users must update manually by deleting old binary and changing version
+       in config.
+       server update was needed for chat to work.
+- fix: completions now work with newer server versions
+- fix: no answer from bot if some chat tab was closed not long ago
+
 2024.02.06
 + add: TAB completion support. new config option: "tab_completion".
 + add: new command "Toggle: Log in on startup". useful with tab_completion option.

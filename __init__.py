@@ -1,4 +1,4 @@
-import os, sys, json, gzip, io, tempfile, subprocess, requests, shutil, time, uuid
+import os, sys, json, gzip, io, tempfile, subprocess, requests, shutil, time, uuid, pathlib
 from concurrent.futures import ThreadPoolExecutor
 from collections import namedtuple
 
@@ -41,7 +41,7 @@ fn_config = os.path.join(app_path(APP_DIR_SETTINGS), PLUGIN_NAME+'.ini')
 option_token = ''
 option_api_key = ''
 option_append_mode = True
-option_version = '1.6.22'
+option_version = '1.48.2'
 option_tab_completion = False
 
 Item = namedtuple('Item', 'hint text suffix text_inline text_inline_mask text_block start_position end_position cursor_offset')
@@ -443,7 +443,7 @@ class Command:
     def on_snippet(self, ed_self: Editor, snippet_id, snippet_text):
         if snippet_id != SNIP_ID or '|' not in snippet_text:
             return
-        _, item_ind = snippet_text.split('|')
+        __, item_ind = snippet_text.split('|')
         item_ind = int(item_ind)
 
         item = self.completions[item_ind]
@@ -567,6 +567,7 @@ class Command:
             self.cancel = True
             timer_proc(TIMER_START_ONE, lambda _: self.request_GetChatMessage(question), 10)
             return
+        self.cancel = False
 
         url = 'http://127.0.0.1:{}/exa.language_server_pb.LanguageServerService/GetChatMessage'.format(
             self.port
@@ -638,6 +639,13 @@ class Command:
 
                         msg = None
                         try:
+                            ## ====== for debugging binary data
+                            #print(message_data)
+                            #script_dir = os.path.dirname(os.path.abspath(__file__))
+                            #file_path = os.path.join(script_dir, "binary_file.protobuf")
+                            #with open(file_path, "wb") as binary_file:
+                            #    binary_file.write(message_data)
+                                
                             msg = proto_pb2.GetChatMessageResponse().FromString(message_data)
                         except Exception as e:
                             print("ERROR:", e)
@@ -645,6 +653,9 @@ class Command:
                             if error_count > 2:
                                 print("ERROR: too many errors, aborting task.")
                                 return
+                            continue
+                        
+                        if not msg.chat_message.conversationId: # not a conversation message, skip
                             continue
 
                         messages.append(msg)
@@ -663,6 +674,8 @@ class Command:
                             # next we have varint? seems it's text size? what for? decode it and skip
                             varint, varint_len = decoder._DecodeVarint(buf, 0)
                             buf = buf[varint_len:]
+                        elif msg.chat_message.error.message:
+                            buf = msg.chat_message.error.message.encode('utf-8')
                         text = buf.decode('utf-8', errors='replace')
                         if option_append_mode:
                             if i == 0:
@@ -748,6 +761,9 @@ class Command:
         lexer = ed.get_prop(PROP_LEXER_FILE)
         lang =  language_enum.get(lex_ids.get(lexer,'plaintext'), 30)
         lexer = lexer or 'plaintext'
+        
+        absolute_path = pathlib.Path(ed.get_filename())
+        absolute_path = absolute_path.as_uri() if absolute_path.is_absolute() else absolute_path.resolve().as_uri()
 
         data = {
             'metadata': {
@@ -764,8 +780,9 @@ class Command:
                     'row': self.row,
                     'col': self.col,
                 },
-                #'absolute_path': '',
-                #'relative_path': '',
+                'absolute_path': absolute_path, #needed from 1.12.6 to 1.14.12
+                'absolute_uri': absolute_path, #needed from 1.16.13
+                
             },
             'editor_options': {
                 'tab_size': ed.get_prop(PROP_TAB_SIZE),
@@ -775,6 +792,10 @@ class Command:
         }
         try:
             response = requests.post(url, headers=HEADERS_JSON, data=json.dumps(data), timeout=4)
+            ## ==== for debugging
+            #if response.status_code  != 200:
+            #    print("ERROR: Can't get codeium completions:  status: {}, response: {}".format(response.status_code, response.json()))
+                                    
             response.raise_for_status()
         except requests.exceptions.Timeout:
             # no need to print
@@ -799,13 +820,8 @@ class Command:
         timer_proc(TIMER_STOP,  self.heartbeat, 5000)
 
         if self.process:
-            if IS_WIN:
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                subprocess.call(['taskkill', '/F', '/T', '/PID',  str(self.process.pid)], startupinfo=startupinfo)
-            else:
-                self.process.terminate()
-                self.process.wait()
+            self.process.terminate()
+            self.process.wait()
             self.process = None
 
 

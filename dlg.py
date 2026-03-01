@@ -60,7 +60,7 @@ class Dialog:
         })
         cls.h_dlg = h
 
-        _, font_size = ed.get_prop(PROP_FONT)
+        __, font_size = ed.get_prop(PROP_FONT)
         font_scale = ed.get_prop(PROP_SCALE_FONT)
 
         idc=dlg_proc(h, DLG_CTL_ADD, 'label');

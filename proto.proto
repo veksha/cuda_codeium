@@ -28,7 +28,12 @@ message ChatMessage {
   {
     ChatMessageIntent intent = 5;
     ChatMessageAction action = 6;
+    ChatMessageError error = 7;
   }
+}
+
+message ChatMessageError {
+  string message = 1;
 }
 
 message ChatMessageIntent
