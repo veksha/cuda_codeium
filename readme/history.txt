@@ -1,3 +1,6 @@
+2026.03.02
++ add: new command "Get available versions"
+
 2026.03.01
 - fix: server version that will be downloaded for new users updated to "1.48.2"
        old users must update manually by deleting old binary and changing version

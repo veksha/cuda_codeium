@@ -20,6 +20,7 @@ IS_WIN = os.name=='nt'
 API_URL = 'https://server.codeium.com'
 HEADERS_JSON       = { 'Content-Type': 'application/json' }
 HEADERS_GRPC_PROTO = { 'Content-Type': 'application/grpc+proto' }
+HEADERS_VSCODE_SITE= { 'Content-Type': 'application/json', 'Accept': 'api-version=3.0-preview.1' }
 SNIP_ID = PLUGIN_NAME+'__snip'
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -184,23 +185,10 @@ class Command:
         except:
             info += "Can't get Codeium server binary info\n\n"
 
-        info += _("Version in config:\t{}\n").format(option_version)
+        info += _("Version in config: \t{}\n").format(option_version)
+        info += _("Newest version can be found by using command 'Get available versions' in Command palette.\n")
+        info += _("\nTo update your server binary, delete old one and change version in config.")
 
-        try:
-            url = "https://api.github.com/repos/Exafunction/codeium/releases/latest"
-            response = requests.get(url)
-            data = response.json()
-            new_timestamp = datetime.datetime.strptime(data['published_at'], '%Y-%m-%dT%H:%M:%SZ')
-            normal_format = new_timestamp.strftime('%Y-%m-%d %H:%M:%S')
-            name = data['name'].lstrip("language-server-v")
-            new_version = _("New version:\t\t{}\nTimestamp: {}").format(name, normal_format)
-            info += new_version
-            if local_timestamp is not None:
-                if local_timestamp < new_timestamp:
-                    info += _("\n\nTo update your server binary, delete old one and change version in config.")
-
-        except:
-            info += _("Can't get Codeium update info.")
         msg_box(info, MB_ICONINFO)
 
     def toggle_log_in_on_startup(self):
@@ -824,6 +812,32 @@ class Command:
             self.process.wait()
             self.process = None
 
+    def show_versions(self):
+        url = 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery'
+        data = '{"filters":[{"criteria":[{"filterType":4,"value":"acab4f40-b6db-42ec-bcd1-01802cbdd988"},{"filterType":8,"value":"Microsoft.VisualStudio.Code"},{"filterType":12,"value":"4096"}],"pageNumber":1,"pageSize":1,"sortBy":0,"sortOrder":0}],"assetTypes":[],"flags":55}'
+        
+        try:
+            response = requests.post(url, headers=HEADERS_VSCODE_SITE, data=data, timeout=4)
+            response.raise_for_status()
+        except requests.exceptions.Timeout:
+            print("ERROR: failed to get codeium versions: The request timed out.")
+            return
+        except requests.exceptions.RequestException as e:
+            print("ERROR: failed to get codeium versions. Error:", e)
+            return
+        
+        try:
+            versions = response.json()["results"][0]["extensions"][0]["versions"]
+            for version in versions:
+                if any(prop["key"] == "Microsoft.VisualStudio.Code.PreRelease" and prop["value"] == "true" for prop in version["properties"]):
+                    version["version"] += " (pre-release)"
+            
+            # pre-release versions can't be easily downloaded it seems, skip them for now
+            versions = [x for x in versions if " (pre-release)" not in x["version"]]
+            
+            dlg_menu(DMENU_LIST, [x["version"] for x in versions], caption=_('Available Codeium versions'))
+        except:
+            dlg_menu(DMENU_LIST, ["Error"], caption=_('Available Codeium versions'))
 
     def on_close(self, ed_self: Editor):
         '''
