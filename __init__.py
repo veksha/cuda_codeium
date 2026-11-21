@@ -750,7 +750,7 @@ class Command:
         lang =  language_enum.get(lex_ids.get(lexer,'plaintext'), 30)
         lexer = lexer or 'plaintext'
         
-        absolute_path = pathlib.Path(ed.get_filename())
+        absolute_path = pathlib.Path(ed.get_prop(PROP_FN, ''))
         absolute_path = absolute_path.as_uri() if absolute_path.is_absolute() else absolute_path.resolve().as_uri()
 
         data = {
