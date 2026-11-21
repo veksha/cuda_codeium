@@ -216,7 +216,7 @@ class Command:
             with ThreadPoolExecutor() as ex:
                 future = ex.submit(self.register_user, self.token)
                 while not future.done():
-                    app_idle()
+                    app_proc(PROC_IDLE, '')
                     time.sleep(0.001)
                 self.api_key = future.result()
 
@@ -276,7 +276,7 @@ class Command:
             future = ex.submit(wait_for_port_file)
 
             while not future.done():
-                app_idle()
+                app_proc(PROC_IDLE, '')
                 time.sleep(0.001)
 
             if self.port:
@@ -308,7 +308,7 @@ class Command:
             self.comp_requests_active += 1
             future = ex.submit(self.request_completions)
             while not future.done():
-                app_idle()
+                app_proc(PROC_IDLE, '')
                 time.sleep(0.001)
             self.comp_requests_active -= 1
             items = future.result()
@@ -486,7 +486,7 @@ class Command:
         with ThreadPoolExecutor() as ex:
             future = ex.submit(_heartbeat_request)
             while not future.done():
-                app_idle()
+                app_proc(PROC_IDLE, '')
                 time.sleep(0.001)
 
     def on_click(self, ed_self, state):
@@ -676,7 +676,7 @@ class Command:
                             prev_text_len = len(text)
                         else:
                             self.set_text(editor, question, text)
-                        app_idle()
+                        app_proc(PROC_IDLE, '')
 
             if not messages:
                 msg_status(_('{}: no answer :(').format(self.name), process_messages=True)
@@ -716,7 +716,7 @@ class Command:
         if not ed_handle:
             self.in_process_of_creating_new_tab = True
             file_open('')
-            if ed.get_filename('*') == '' and ed.get_text_all() == '': # ensure we are at correct tab
+            if ed.get_prop(PROP_FN, '*') == '' and ed.get_text_all() == '': # ensure we are at correct tab
                 ed_handle = ed.get_prop(PROP_HANDLE_SELF)
                 self.conversations[conversation_id] = ed_handle
                 self.in_process_of_creating_new_tab = False
