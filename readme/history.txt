@@ -1,3 +1,7 @@
+2026.11.21
+- fix: avoid deprecated API: app_idle
+- fix: avoid deprecated API: get_filename
+
 2026.03.02
 + add: new command "Get available versions"
 
